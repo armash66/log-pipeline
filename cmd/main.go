@@ -19,6 +19,8 @@ func main() {
     since := flag.String("since", "", "filter entries newer than duration (e.g. 10m, 1h)")
     search := flag.String("search", "", "filter by substring in message (case-insensitive)")
     jsonOut := flag.Bool("json", false, "output as JSON instead of text")
+    limit := flag.Int("limit", 0, "limit output to N entries (0 = no limit)")
+    output := flag.String("output", "", "save output to file (e.g. results.json, results.txt)")
     flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -56,24 +58,44 @@ func main() {
 		filtered = append(filtered, e)
 	}
 
+	limited := filtered
+	if *limit > 0 && len(filtered) > *limit {
+		limited = filtered[:*limit]
+	}
+
+	var outputText string
 	if *jsonOut {
-		output := map[string]interface{}{
+		outputData := map[string]interface{}{
 			"total_loaded":   len(entries),
 			"after_filters":  len(filtered),
-			"entries":        filtered,
+			"limited_to":     *limit,
+			"entries":        limited,
 		}
-		data, err := json.MarshalIndent(output, "", "  ")
+		data, err := json.MarshalIndent(outputData, "", "  ")
 		if err != nil {
 			log.Fatalf("failed to marshal JSON: %v", err)
 		}
-		fmt.Println(string(data))
+		outputText = string(data)
 	} else {
-		fmt.Printf("Loaded %d log entries (%d after filters)\n", len(entries), len(filtered))
-		for i, e := range filtered {
-			if i >= 20 {
-				break
-			}
-			fmt.Printf("%s %s %s\n", e.Timestamp.Format(time.RFC3339), e.Level, e.Message)
+		var textBuilder strings.Builder
+		textBuilder.WriteString(fmt.Sprintf("Loaded %d log entries (%d after filters)", len(entries), len(filtered)))
+		if *limit > 0 {
+			textBuilder.WriteString(fmt.Sprintf(" (showing %d)", len(limited)))
 		}
+		textBuilder.WriteString("\n")
+		for _, e := range limited {
+			textBuilder.WriteString(fmt.Sprintf("%s %s %s\n", e.Timestamp.Format(time.RFC3339), e.Level, e.Message))
+		}
+		outputText = textBuilder.String()
+	}
+
+	if *output != "" {
+		err := os.WriteFile(*output, []byte(outputText), 0644)
+		if err != nil {
+			log.Fatalf("failed to write to %s: %v", *output, err)
+		}
+		fmt.Printf("Output saved to %s\n", *output)
+	} else {
+		fmt.Print(outputText)
 	}
 }
