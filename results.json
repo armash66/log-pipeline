@@ -1,0 +1,17 @@
+{
+  "after_filters": 3,
+  "entries": [
+    {
+      "Timestamp": "2026-02-08T16:00:10Z",
+      "Level": "DEBUG",
+      "Message": "Initializing database connection pool"
+    },
+    {
+      "Timestamp": "2026-02-08T16:00:15Z",
+      "Level": "INFO",
+      "Message": "Database connection established"
+    }
+  ],
+  "limited_to": 2,
+  "total_loaded": 25
+}

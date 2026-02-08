@@ -45,6 +45,68 @@ go run ./cmd/main.go
 ---
 
 Built as an iterative learning project.
+ 
+## Current Implementation
+
+This repository now contains a working CLI log pipeline with ingestion, filtering, and basic output features. Key implemented items:
+
+- Ingestion: `internal/ingest.ReadLogFile` reads log files line-by-line and parses entries as `LogEntry` (timestamp, level, message).
+- CLI flags (in `cmd/main.go`):
+	- `--file` (path to log file, default `samples/sample.log`)
+	- `--level` (ERROR, WARN, INFO, DEBUG)
+	- `--since` (duration like `10m`, `1h` to filter recent entries)
+	- `--search` (case-insensitive substring search in message)
+	- `--json` (output as pretty JSON)
+	- `--limit` (limit number of entries in output)
+	- `--output` (save output to a file; writes text or JSON depending on `--json`)
+- Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
+- Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
+
+## Usage Examples
+
+Run the demo with defaults:
+
+```powershell
+go run ./cmd/main.go
+```
+
+Filter and print errors:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --level ERROR
+```
+
+Search + JSON + limit + write to file:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --search "database" --json --limit 2 --output results.json
+```
+
+Save text output:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --level ERROR --output errors.txt
+```
+
+Run parser tests:
+
+```powershell
+go test ./internal/ingest -v
+```
+
+## Next Work (optional)
+
+- Streaming/tail mode (`--tail`) to follow files in real time
+- More filters (substring DSL), indexing for speed, persistence, HTTP API
+
+## Suggested Commit
+
+```bash
+git add .
+git commit -m "feat: add ingestion, CLI filters (--file,--level,--since,--search,--json,--limit,--output), tests and samples"
+```
+
+If you'd like, I can add streaming/tail next or prepare an integration test harness.
 
 **Development Process**
 
