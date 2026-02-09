@@ -74,6 +74,8 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--snapshot` (write a full snapshot of entries to a JSON file)
 	- `--retention` (drop entries older than duration, e.g. `24h`, `7d`)
 	- `--config` (load settings from a JSON config file)
+	- `--metrics` (print ingestion/query metrics)
+	- `--metrics-file` (write metrics to a file)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -152,6 +154,13 @@ Run with config:
 
 ```powershell
 go run ./cmd/main.go --config config.json
+```
+
+Metrics:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --metrics
+go run ./cmd/main.go --file samples/app.log --metrics --metrics-file data/metrics.txt
 ```
 
 Query DSL examples:

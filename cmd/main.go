@@ -44,8 +44,11 @@ func main() {
 	snapshot := flag.String("snapshot", "", "write a full snapshot of entries to a JSON file")
 	retention := flag.String("retention", "", "drop entries older than duration (e.g. 24h, 7d)")
 	configPath := flag.String("config", "", "load settings from a JSON config file")
+	metrics := flag.Bool("metrics", false, "print ingestion/query metrics")
+	metricsFile := flag.String("metrics-file", "", "write metrics to a file (text)")
 	flag.Parse()
 
+	runStart := time.Now()
 	setFlags := make(map[string]bool)
 	flag.CommandLine.Visit(func(f *flag.Flag) {
 		setFlags[f.Name] = true
@@ -214,6 +217,18 @@ func main() {
 		fmt.Printf("Output saved to %s\n", *output)
 	} else if !*quiet {
 		fmt.Print(outputText)
+	}
+
+	if *metrics || *metricsFile != "" {
+		m := Metrics{
+			StartedAt:    runStart,
+			FinishedAt:   time.Now(),
+			Loaded:       len(entries),
+			Filtered:     len(filtered),
+			Limited:      len(limited),
+			IndexEnabled: *useIndex,
+		}
+		printMetrics(m, *metrics, *metricsFile)
 	}
 }
 
@@ -492,6 +507,50 @@ func printPlan(plan []string) {
 		fmt.Printf("- %s\n", step)
 	}
 	fmt.Println()
+}
+
+type Metrics struct {
+	StartedAt    time.Time
+	FinishedAt   time.Time
+	Loaded       int
+	Filtered     int
+	Limited      int
+	IndexEnabled bool
+}
+
+func (m Metrics) Duration() time.Duration {
+	return m.FinishedAt.Sub(m.StartedAt)
+}
+
+func (m Metrics) RatePerSec() float64 {
+	secs := m.Duration().Seconds()
+	if secs <= 0 {
+		return 0
+	}
+	return float64(m.Loaded) / secs
+}
+
+func printMetrics(m Metrics, toStdout bool, path string) {
+	lines := []string{
+		fmt.Sprintf("metrics.started_at=%s", m.StartedAt.UTC().Format(time.RFC3339)),
+		fmt.Sprintf("metrics.finished_at=%s", m.FinishedAt.UTC().Format(time.RFC3339)),
+		fmt.Sprintf("metrics.duration_ms=%d", m.Duration().Milliseconds()),
+		fmt.Sprintf("metrics.loaded=%d", m.Loaded),
+		fmt.Sprintf("metrics.filtered=%d", m.Filtered),
+		fmt.Sprintf("metrics.limited=%d", m.Limited),
+		fmt.Sprintf("metrics.rate_per_sec=%.2f", m.RatePerSec()),
+		fmt.Sprintf("metrics.index_enabled=%t", m.IndexEnabled),
+	}
+
+	if toStdout {
+		fmt.Println(strings.Join(lines, "\n"))
+	}
+
+	if path != "" {
+		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+			log.Fatalf("failed to write metrics to %s: %v", path, err)
+		}
+	}
 }
 
 func printRunHeader(source string, dest string) error {
