@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/armash/log-pipeline/internal/index"
 	"github.com/armash/log-pipeline/internal/ingest"
+	"github.com/armash/log-pipeline/internal/store"
 	"github.com/armash/log-pipeline/internal/types"
 )
 
@@ -27,6 +29,9 @@ func main() {
 	tailFromStart := flag.Bool("tail-from-start", false, "when tailing, start from beginning instead of end")
 	tailPoll := flag.Duration("tail-poll", 500*time.Millisecond, "when tailing, poll interval (e.g. 250ms, 1s)")
 	format := flag.String("format", "plain", "log format: plain, json, logfmt, auto")
+	storePath := flag.String("store", "", "append ingested entries to a JSONL store file")
+	loadPath := flag.String("load", "", "load entries from a JSONL store file instead of --file")
+	useIndex := flag.Bool("index", false, "build in-memory indexes to speed up filtering")
 	flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -51,21 +56,40 @@ func main() {
 	}
 
 	if *tail {
-		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat)
+		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat, *storePath)
 		return
 	}
 
-	entries, err := ingest.ReadLogFileWithFormat(*file, parsedFormat)
-	if err != nil {
-		log.Fatalf("failed to read %s: %v", *file, err)
+	var entries []types.LogEntry
+	if *loadPath != "" {
+		entries, err = store.LoadJSONL(*loadPath)
+		if err != nil {
+			log.Fatalf("failed to load %s: %v", *loadPath, err)
+		}
+	} else {
+		entries, err = ingest.ReadLogFileWithFormat(*file, parsedFormat)
+		if err != nil {
+			log.Fatalf("failed to read %s: %v", *file, err)
+		}
+		if *storePath != "" {
+			if err := store.AppendJSONL(*storePath, entries); err != nil {
+				log.Fatalf("failed to store entries: %v", err)
+			}
+		}
 	}
 
-	filtered := make([]types.LogEntry, 0, len(entries))
-	for _, e := range entries {
-		if !matchesFilters(e, *level, cutoff, *search) {
-			continue
+	var filtered []types.LogEntry
+	if *useIndex {
+		idx := index.Build(entries)
+		filtered = index.Filter(entries, idx, *level, cutoff, *search)
+	} else {
+		filtered = make([]types.LogEntry, 0, len(entries))
+		for _, e := range entries {
+			if !matchesFilters(e, *level, cutoff, *search) {
+				continue
+			}
+			filtered = append(filtered, e)
 		}
-		filtered = append(filtered, e)
 	}
 
 	limited := filtered
@@ -123,7 +147,7 @@ func matchesFilters(e types.LogEntry, level string, cutoff time.Time, search str
 	return true
 }
 
-func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format) {
+func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format, storePath string) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -153,6 +177,16 @@ func runTail(path string, level string, cutoff time.Time, search string, jsonOut
 		fmt.Print(text)
 	}
 
+	var storeFile *os.File
+	if storePath != "" {
+		f, err := os.OpenFile(storePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatalf("failed to open %s: %v", storePath, err)
+		}
+		defer f.Close()
+		storeFile = f
+	}
+
 	matched := 0
 	for {
 		select {
@@ -163,6 +197,11 @@ func runTail(path string, level string, cutoff time.Time, search string, jsonOut
 		case e, ok := <-entries:
 			if !ok {
 				return
+			}
+			if storeFile != nil {
+				if err := store.AppendJSONLToWriter(storeFile, e); err != nil {
+					log.Fatalf("failed to store entry: %v", err)
+				}
 			}
 			if !matchesFilters(e, level, cutoff, search) {
 				continue

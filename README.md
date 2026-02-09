@@ -63,6 +63,9 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--tail` (stream new entries as file grows)
 	- `--tail-from-start` (tail from beginning instead of end)
 	- `--tail-poll` (poll interval when tailing)
+	- `--store` (append ingested entries to a JSONL store file)
+	- `--load` (load entries from a JSONL store file instead of `--file`)
+	- `--index` (build in-memory indexes to speed up filtering)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -108,6 +111,13 @@ Auto-detect format:
 
 ```powershell
 go run ./cmd/main.go --file samples/json.log --format auto
+```
+
+Store entries to a JSONL file and query from it:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --store data/store.jsonl
+go run ./cmd/main.go --load data/store.jsonl --level ERROR --index
 ```
 
 Run parser tests:
