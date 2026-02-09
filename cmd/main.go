@@ -223,9 +223,10 @@ func main() {
 		m := Metrics{
 			StartedAt:    runStart,
 			FinishedAt:   time.Now(),
-			Loaded:       len(entries),
-			Filtered:     len(filtered),
-			Limited:      len(limited),
+			Read:         len(entries),
+			Ingested:     len(entries),
+			FilteredOut:  len(entries) - len(filtered),
+			Returned:     len(limited),
 			IndexEnabled: *useIndex,
 		}
 		printMetrics(m, *metrics, *metricsFile)
@@ -512,9 +513,10 @@ func printPlan(plan []string) {
 type Metrics struct {
 	StartedAt    time.Time
 	FinishedAt   time.Time
-	Loaded       int
-	Filtered     int
-	Limited      int
+	Read         int
+	Ingested     int
+	FilteredOut  int
+	Returned     int
 	IndexEnabled bool
 }
 
@@ -522,23 +524,29 @@ func (m Metrics) Duration() time.Duration {
 	return m.FinishedAt.Sub(m.StartedAt)
 }
 
-func (m Metrics) RatePerSec() float64 {
+func (m Metrics) RatePerSec() (float64, bool) {
 	secs := m.Duration().Seconds()
-	if secs <= 0 {
-		return 0
+	if secs < 1 {
+		return 0, false
 	}
-	return float64(m.Loaded) / secs
+	return float64(m.Ingested) / secs, true
 }
 
 func printMetrics(m Metrics, toStdout bool, path string) {
+	rate, ok := m.RatePerSec()
+	rateText := "NA"
+	if ok {
+		rateText = fmt.Sprintf("%.2f", rate)
+	}
 	lines := []string{
 		fmt.Sprintf("metrics.started_at=%s", m.StartedAt.UTC().Format(time.RFC3339)),
 		fmt.Sprintf("metrics.finished_at=%s", m.FinishedAt.UTC().Format(time.RFC3339)),
 		fmt.Sprintf("metrics.duration_ms=%d", m.Duration().Milliseconds()),
-		fmt.Sprintf("metrics.loaded=%d", m.Loaded),
-		fmt.Sprintf("metrics.filtered=%d", m.Filtered),
-		fmt.Sprintf("metrics.limited=%d", m.Limited),
-		fmt.Sprintf("metrics.rate_per_sec=%.2f", m.RatePerSec()),
+		fmt.Sprintf("metrics.logs_read=%d", m.Read),
+		fmt.Sprintf("metrics.logs_ingested=%d", m.Ingested),
+		fmt.Sprintf("metrics.logs_filtered_out=%d", m.FilteredOut),
+		fmt.Sprintf("metrics.logs_returned=%d", m.Returned),
+		fmt.Sprintf("metrics.rate_per_sec=%s", rateText),
 		fmt.Sprintf("metrics.index_enabled=%t", m.IndexEnabled),
 	}
 
