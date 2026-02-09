@@ -671,19 +671,43 @@ func parseFlexibleDuration(value string) (time.Duration, error) {
 	if value == "" {
 		return 0, fmt.Errorf("empty duration")
 	}
-	last := value[len(value)-1]
-	if last == 'd' || last == 'w' {
-		num := strings.TrimSpace(value[:len(value)-1])
+	var total time.Duration
+	s := value
+	for len(s) > 0 {
+		i := 0
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i == 0 {
+			return 0, fmt.Errorf("invalid duration: %s", value)
+		}
+		num := s[:i]
+		if i >= len(s) {
+			return 0, fmt.Errorf("invalid duration: %s", value)
+		}
+		unit := s[i]
 		n, err := strconv.Atoi(num)
 		if err != nil {
 			return 0, err
 		}
-		if last == 'd' {
-			return time.Duration(n) * 24 * time.Hour, nil
+		switch unit {
+		case 'd':
+			total += time.Duration(n) * 24 * time.Hour
+			s = s[i+1:]
+		case 'w':
+			total += time.Duration(n) * 7 * 24 * time.Hour
+			s = s[i+1:]
+		default:
+			// Fallback to ParseDuration for remaining part (supports h/m/s/ms/us/ns)
+			d, err := time.ParseDuration(s)
+			if err != nil {
+				return 0, err
+			}
+			total += d
+			s = ""
 		}
-		return time.Duration(n) * 7 * 24 * time.Hour, nil
 	}
-	return time.ParseDuration(value)
+	return total, nil
 }
 
 type cleanupPlan struct {
