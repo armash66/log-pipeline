@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -22,14 +23,20 @@ type Server struct {
 	baseIndex  *index.Index
 	lastMetric engine.Metrics
 	hasMetric  bool
+	storePath  string
+	shardDir   string
+	apiKey     string
 }
 
-func New(entries []types.LogEntry, stats engine.LoadStats, useIndex bool, baseIndex *index.Index) *Server {
+func New(entries []types.LogEntry, stats engine.LoadStats, useIndex bool, baseIndex *index.Index, storePath string, shardDir string, apiKey string) *Server {
 	return &Server{
 		entries:   entries,
 		loadStats: stats,
 		useIndex:  useIndex,
 		baseIndex: baseIndex,
+		storePath: storePath,
+		shardDir:  shardDir,
+		apiKey:    apiKey,
 	}
 }
 
@@ -38,6 +45,7 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/query", s.handleQuery)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	mux.HandleFunc("/ingest", s.handleIngest)
 
 	srv := &http.Server{
 		Addr:    addr,
@@ -152,6 +160,64 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, metricsToMap(metrics))
 }
 
+func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.apiKey != "" {
+		if r.Header.Get("X-API-Key") != s.apiKey {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	var payload ingestPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	var entries []types.LogEntry
+	if len(payload.Entries) > 0 {
+		for _, item := range payload.Entries {
+			entry, err := item.toEntry()
+			if err != nil {
+				http.Error(w, "invalid entry", http.StatusBadRequest)
+				return
+			}
+			entries = append(entries, entry)
+		}
+	} else if payload.Entry != nil {
+		entry, err := payload.Entry.toEntry()
+		if err != nil {
+			http.Error(w, "invalid entry", http.StatusBadRequest)
+			return
+		}
+		entries = append(entries, entry)
+	} else {
+		http.Error(w, "missing entry", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	combined, stats, err := engine.IngestEntries(s.entries, entries, s.storePath, s.shardDir, "")
+	if err != nil {
+		s.mu.Unlock()
+		http.Error(w, "failed to ingest", http.StatusInternalServerError)
+		return
+	}
+	s.entries = combined
+	s.loadStats.LogsRead += stats.LogsIngested
+	s.loadStats.LogsIngested += stats.LogsIngested
+	s.baseIndex = nil
+	s.mu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ingested": len(entries),
+	})
+}
+
 func metricsToMap(m engine.Metrics) map[string]interface{} {
 	rate, ok := m.RatePerSec()
 	rateText := "NA"
@@ -179,4 +245,30 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+type ingestPayload struct {
+	Entry   *ingestEntry   `json:"entry"`
+	Entries []ingestEntry  `json:"entries"`
+}
+
+type ingestEntry struct {
+	Timestamp string `json:"timestamp"`
+	Level     string `json:"level"`
+	Message   string `json:"message"`
+}
+
+func (e ingestEntry) toEntry() (types.LogEntry, error) {
+	if e.Timestamp == "" || e.Level == "" || e.Message == "" {
+		return types.LogEntry{}, fmt.Errorf("missing fields")
+	}
+	t, err := time.Parse(time.RFC3339, e.Timestamp)
+	if err != nil {
+		return types.LogEntry{}, err
+	}
+	return types.LogEntry{
+		Timestamp: t,
+		Level:     e.Level,
+		Message:   e.Message,
+	}, nil
 }

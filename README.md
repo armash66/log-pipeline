@@ -81,6 +81,7 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--port` (server port for `--serve`, default 8080)
 	- `--shard-dir` (write daily JSONL shards to this directory)
 	- `--shard-read` (read entries from shards in `--shard-dir` instead of `--file`)
+	- `--api-key` (require `X-API-Key` for HTTP ingest)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -181,6 +182,7 @@ Endpoints:
 curl http://localhost:8080/health
 curl "http://localhost:8080/query?level=ERROR&since=10m&search=auth&limit=5"
 curl http://localhost:8080/metrics
+curl -X POST http://localhost:8080/ingest -H "Content-Type: application/json" -d "{\"entry\":{\"timestamp\":\"2026-02-09T17:10:12Z\",\"level\":\"INFO\",\"message\":\"hello\"}}"
 ```
 
 Sharding (by day):

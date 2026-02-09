@@ -53,6 +53,7 @@ func main() {
 	port := flag.Int("port", 8080, "server port for --serve")
 	shardDir := flag.String("shard-dir", "", "write daily JSONL shards to this directory")
 	shardRead := flag.Bool("shard-read", false, "read entries from shards in --shard-dir instead of --file")
+	apiKey := flag.String("api-key", "", "API key required for POST /ingest")
 	flag.Parse()
 
 	runStart := time.Now()
@@ -66,7 +67,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
-		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshotPath, snapshotLoad, retention, metricsFlag, metricsFile, serve, port, shardDir, shardRead)
+		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshotPath, snapshotLoad, retention, metricsFlag, metricsFile, serve, port, shardDir, shardRead, apiKey)
 	}
 
 	if *shardRead && *shardDir == "" {
@@ -148,7 +149,7 @@ func main() {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		srv := server.New(result.Entries, result.Stats, *useIndex, result.Index)
+		srv := server.New(result.Entries, result.Stats, *useIndex, result.Index, *storePath, *shardDir, *apiKey)
 		addr := fmt.Sprintf(":%d", *port)
 		if err := srv.Start(ctx, addr); err != nil {
 			log.Fatalf("server error: %v", err)
@@ -353,7 +354,7 @@ func parseFormat(value string) (ingest.Format, error) {
 	}
 }
 
-func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, snapshotLoad *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int, shardDir *string, shardRead *bool) {
+func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, snapshotLoad *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int, shardDir *string, shardRead *bool, apiKey *string) {
 	if !setFlags["file"] && cfg.File != nil {
 		*file = *cfg.File
 	}
@@ -439,6 +440,9 @@ func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, lev
 	}
 	if !setFlags["shard-read"] && cfg.ShardRead != nil {
 		*shardRead = *cfg.ShardRead
+	}
+	if !setFlags["api-key"] && cfg.ApiKey != nil {
+		*apiKey = *cfg.ApiKey
 	}
 }
 

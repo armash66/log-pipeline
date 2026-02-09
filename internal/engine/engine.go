@@ -66,6 +66,10 @@ type LoadResult struct {
 	Index   *index.Index
 }
 
+type IngestStats struct {
+	LogsIngested int
+}
+
 func LoadEntries(opts LoadOptions) (LoadResult, error) {
 	var entries []types.LogEntry
 	stats := LoadStats{}
@@ -193,6 +197,28 @@ func QueryEntries(entries []types.LogEntry, loadStats LoadStats, opts QueryOptio
 	}
 
 	return limited, metrics
+}
+
+// IngestEntries appends entries to stores and shards, and returns updated entries slice.
+func IngestEntries(existing []types.LogEntry, entries []types.LogEntry, storePath string, shardDir string, storeHeaderText string) ([]types.LogEntry, IngestStats, error) {
+	stats := IngestStats{LogsIngested: len(entries)}
+	if storePath != "" {
+		if storeHeaderText != "" {
+			if err := store.AppendHeader(storePath, storeHeaderText); err != nil {
+				return existing, stats, err
+			}
+		}
+		if err := store.AppendJSONL(storePath, entries); err != nil {
+			return existing, stats, err
+		}
+	}
+	if shardDir != "" {
+		if err := store.AppendShards(shardDir, entries); err != nil {
+			return existing, stats, err
+		}
+	}
+	combined := append(existing, entries...)
+	return combined, stats, nil
 }
 
 func applyRetention(entries []types.LogEntry, cutoff time.Time) []types.LogEntry {

@@ -36,6 +36,7 @@ type Config struct {
 	Port          *int    `json:"port"`
 	ShardDir      *string `json:"shardDir"`
 	ShardRead     *bool   `json:"shardRead"`
+	ApiKey        *string `json:"apiKey"`
 }
 
 // Load reads a JSON config file from disk.
