@@ -76,6 +76,8 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--config` (load settings from a JSON config file)
 	- `--metrics` (print ingestion/query metrics)
 	- `--metrics-file` (write metrics to a file)
+	- `--serve` (run HTTP server mode)
+	- `--port` (server port for `--serve`, default 8080)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -161,6 +163,20 @@ Metrics:
 ```powershell
 go run ./cmd/main.go --file samples/app.log --metrics
 go run ./cmd/main.go --file samples/app.log --metrics --metrics-file data/metrics.txt
+```
+
+Server mode:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --serve --port 8080
+```
+
+Endpoints:
+
+```powershell
+curl http://localhost:8080/health
+curl "http://localhost:8080/query?level=ERROR&since=10m&search=auth&limit=5"
+curl http://localhost:8080/metrics
 ```
 
 Query DSL examples:

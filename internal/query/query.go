@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/armash/log-pipeline/internal/types"
 )
 
 type Filters struct {
@@ -78,6 +80,61 @@ func Parse(input string) (Filters, error) {
 	}
 
 	return f, nil
+}
+
+func BuildFilters(level string, cutoff time.Time, search string) Filters {
+	return Filters{
+		Level:  level,
+		Search: search,
+		After:  cutoff,
+	}
+}
+
+func MergeFilters(base Filters, extra Filters) (Filters, error) {
+	merged := base
+	if extra.Level != "" {
+		if merged.Level != "" && !strings.EqualFold(merged.Level, extra.Level) {
+			return Filters{}, fmt.Errorf("conflicting level filters")
+		}
+		merged.Level = extra.Level
+	}
+	if extra.Search != "" {
+		if merged.Search != "" && merged.Search != extra.Search {
+			return Filters{}, fmt.Errorf("conflicting search filters")
+		}
+		merged.Search = extra.Search
+	}
+	if !extra.After.IsZero() {
+		if !merged.After.IsZero() && extra.After.After(merged.After) {
+			merged.After = extra.After
+		} else if merged.After.IsZero() {
+			merged.After = extra.After
+		}
+	}
+	if !extra.Before.IsZero() {
+		if !merged.Before.IsZero() && extra.Before.Before(merged.Before) {
+			merged.Before = extra.Before
+		} else if merged.Before.IsZero() {
+			merged.Before = extra.Before
+		}
+	}
+	return merged, nil
+}
+
+func MatchesFilters(e types.LogEntry, f Filters) bool {
+	if f.Level != "" && !strings.EqualFold(e.Level, f.Level) {
+		return false
+	}
+	if !f.After.IsZero() && e.Timestamp.Before(f.After) {
+		return false
+	}
+	if !f.Before.IsZero() && !e.Timestamp.Before(f.Before) {
+		return false
+	}
+	if f.Search != "" && !strings.Contains(strings.ToLower(e.Message), strings.ToLower(f.Search)) {
+		return false
+	}
+	return true
 }
 
 func splitToken(token string) (string, string, string, error) {

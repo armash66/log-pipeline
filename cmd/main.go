@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/armash/log-pipeline/internal/config"
-	"github.com/armash/log-pipeline/internal/index"
+	"github.com/armash/log-pipeline/internal/engine"
 	"github.com/armash/log-pipeline/internal/ingest"
 	"github.com/armash/log-pipeline/internal/query"
+	"github.com/armash/log-pipeline/internal/server"
 	"github.com/armash/log-pipeline/internal/store"
-	"github.com/armash/log-pipeline/internal/types"
 )
 
 func main() {
@@ -46,6 +46,8 @@ func main() {
 	configPath := flag.String("config", "", "load settings from a JSON config file")
 	metrics := flag.Bool("metrics", false, "print ingestion/query metrics")
 	metricsFile := flag.String("metrics-file", "", "write metrics to a file (text)")
+	serve := flag.Bool("serve", false, "run HTTP server mode")
+	port := flag.Int("port", 8080, "server port for --serve")
 	flag.Parse()
 
 	runStart := time.Now()
@@ -59,15 +61,17 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
-		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshot, retention)
+		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshot, retention, metrics, metricsFile, serve, port)
 	}
 
-	if _, err := os.Stat(*file); err != nil {
-		if os.IsNotExist(err) {
-			log.Fatalf("file not found: %s\nHint: check the path or run with the sample file: --file samples\\sample.log", *file)
-        }
-        log.Fatalf("failed to access %s: %v", *file, err)
-    }
+	if *loadPath == "" {
+		if _, err := os.Stat(*file); err != nil {
+			if os.IsNotExist(err) {
+				log.Fatalf("file not found: %s\nHint: check the path or run with the sample file: --file samples\\sample.log", *file)
+			}
+			log.Fatalf("failed to access %s: %v", *file, err)
+		}
+	}
 
 	var cutoff time.Time
 	if *since != "" {
@@ -78,13 +82,35 @@ func main() {
 		cutoff = time.Now().Add(-d)
 	}
 
-	var retentionCutoff time.Time
+	var retentionDur time.Duration
 	if *retention != "" {
 		d, err := time.ParseDuration(*retention)
 		if err != nil {
 			log.Fatalf("invalid --retention value: %v", err)
 		}
-		retentionCutoff = time.Now().Add(-d)
+		retentionDur = d
+	}
+
+	if *serve {
+		entries, stats, err := engine.LoadEntries(engine.LoadOptions{
+			File:      *file,
+			Format:    parsedFormat,
+			LoadPath:  *loadPath,
+			StorePath: "",
+			Replay:    *replay,
+			Retention: retentionDur,
+		})
+		if err != nil {
+			log.Fatalf("failed to load entries: %v", err)
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		srv := server.New(entries, stats, *useIndex)
+		addr := fmt.Sprintf(":%d", *port)
+		if err := srv.Start(ctx, addr); err != nil {
+			log.Fatalf("server error: %v", err)
+		}
+		return
 	}
 
 	parsedFormat, err := parseFormat(*format)
@@ -100,45 +126,23 @@ func main() {
 
 	if *tail {
 		if *explain {
-			printPlan(buildQueryPlan(buildFilters(*level, cutoff, *search), *queryStr, *useIndex))
+			printPlan(buildQueryPlan(query.BuildFilters(*level, cutoff, *search), *queryStr, *useIndex))
 		}
 		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat, *storePath, *quiet, *storeHeader)
 		return
 	}
 
-	var entries []types.LogEntry
-	if *loadPath != "" {
-		entries, err = store.LoadJSONL(*loadPath)
-		if err != nil {
-			log.Fatalf("failed to load %s: %v", *loadPath, err)
-		}
-	} else {
-		if *replay && *storePath != "" {
-			loaded, err := store.LoadJSONL(*storePath)
-			if err != nil {
-				log.Fatalf("failed to replay %s: %v", *storePath, err)
-			}
-			entries = append(entries, loaded...)
-		}
-		newEntries, err := ingest.ReadLogFileWithFormat(*file, parsedFormat)
-		if err != nil {
-			log.Fatalf("failed to read %s: %v", *file, err)
-		}
-		entries = append(entries, newEntries...)
-		if *storePath != "" {
-			if *storeHeader {
-				if err := store.AppendHeader(*storePath, buildRunHeaderText(*file, *storePath)); err != nil {
-					log.Fatalf("failed to store header: %v", err)
-				}
-			}
-			if err := store.AppendJSONL(*storePath, newEntries); err != nil {
-				log.Fatalf("failed to store entries: %v", err)
-			}
-		}
-	}
-
-	if !retentionCutoff.IsZero() {
-		entries = applyRetention(entries, retentionCutoff)
+	entries, loadStats, err := engine.LoadEntries(engine.LoadOptions{
+		File:            *file,
+		Format:          parsedFormat,
+		LoadPath:        *loadPath,
+		StorePath:       *storePath,
+		Replay:          *replay,
+		Retention:       retentionDur,
+		StoreHeaderText: headerText(*storePath, *storeHeader, *file),
+	})
+	if err != nil {
+		log.Fatalf("failed to load entries: %v", err)
 	}
 
 	if *snapshot != "" {
@@ -147,13 +151,13 @@ func main() {
 		}
 	}
 
-	filters := buildFilters(*level, cutoff, *search)
+	filters := query.BuildFilters(*level, cutoff, *search)
 	if *queryStr != "" {
 		qf, err := query.Parse(*queryStr)
 		if err != nil {
 			log.Fatalf("invalid --query: %v", err)
 		}
-		merged, err := mergeFilters(filters, qf)
+		merged, err := query.MergeFilters(filters, qf)
 		if err != nil {
 			log.Fatalf("invalid --query: %v", err)
 		}
@@ -164,30 +168,20 @@ func main() {
 		printPlan(buildQueryPlan(filters, *queryStr, *useIndex))
 	}
 
-	var filtered []types.LogEntry
-	if *useIndex {
-		idx := index.Build(entries)
-		filtered = index.FilterWithFilters(entries, idx, filters)
-	} else {
-		filtered = make([]types.LogEntry, 0, len(entries))
-		for _, e := range entries {
-			if !matchesFilters(e, filters) {
-				continue
-			}
-			filtered = append(filtered, e)
-		}
-	}
+	filtered, metrics := engine.QueryEntries(entries, loadStats, engine.QueryOptions{
+		Filters:  filters,
+		UseIndex: *useIndex,
+		Limit:    *limit,
+	})
 
 	limited := filtered
-	if *limit > 0 && len(filtered) > *limit {
-		limited = filtered[:*limit]
-	}
+	afterFilters := len(entries) - metrics.LogsFilteredOut
 
 	var outputText string
 	if *jsonOut {
 		outputData := map[string]interface{}{
 			"total_loaded":  len(entries),
-			"after_filters": len(filtered),
+			"after_filters": afterFilters,
 			"limited_to":    *limit,
 			"entries":       limited,
 		}
@@ -198,7 +192,7 @@ func main() {
 		outputText = string(data)
 	} else {
 		var textBuilder strings.Builder
-		textBuilder.WriteString(fmt.Sprintf("Loaded %d log entries (%d after filters)", len(entries), len(filtered)))
+		textBuilder.WriteString(fmt.Sprintf("Loaded %d log entries (%d after filters)", len(entries), afterFilters))
 		if *limit > 0 {
 			textBuilder.WriteString(fmt.Sprintf(" (showing %d)", len(limited)))
 		}
@@ -220,33 +214,10 @@ func main() {
 	}
 
 	if *metrics || *metricsFile != "" {
-		m := Metrics{
-			StartedAt:    runStart,
-			FinishedAt:   time.Now(),
-			Read:         len(entries),
-			Ingested:     len(entries),
-			FilteredOut:  len(entries) - len(filtered),
-			Returned:     len(limited),
-			IndexEnabled: *useIndex,
-		}
-		printMetrics(m, *metrics, *metricsFile)
+		metrics.StartedAt = runStart
+		metrics.FinishedAt = time.Now()
+		printMetrics(metrics, *metrics, *metricsFile)
 	}
-}
-
-func matchesFilters(e types.LogEntry, f query.Filters) bool {
-	if f.Level != "" && !strings.EqualFold(e.Level, f.Level) {
-		return false
-	}
-	if !f.After.IsZero() && e.Timestamp.Before(f.After) {
-		return false
-	}
-	if !f.Before.IsZero() && !e.Timestamp.Before(f.Before) {
-		return false
-	}
-	if f.Search != "" && !strings.Contains(strings.ToLower(e.Message), strings.ToLower(f.Search)) {
-		return false
-	}
-	return true
 }
 
 func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format, storePath string, quiet bool, storeHeader bool) {
@@ -313,7 +284,7 @@ func runTail(path string, level string, cutoff time.Time, search string, jsonOut
 					log.Fatalf("failed to store entry: %v", err)
 				}
 			}
-			if !matchesFilters(e, buildFilters(level, cutoff, search)) {
+			if !query.MatchesFilters(e, query.BuildFilters(level, cutoff, search)) {
 				continue
 			}
 
@@ -350,46 +321,7 @@ func parseFormat(value string) (ingest.Format, error) {
 	}
 }
 
-func buildFilters(level string, cutoff time.Time, search string) query.Filters {
-	return query.Filters{
-		Level:  level,
-		Search: search,
-		After:  cutoff,
-	}
-}
-
-func mergeFilters(base query.Filters, extra query.Filters) (query.Filters, error) {
-	merged := base
-	if extra.Level != "" {
-		if merged.Level != "" && !strings.EqualFold(merged.Level, extra.Level) {
-			return query.Filters{}, fmt.Errorf("conflicting level filters")
-		}
-		merged.Level = extra.Level
-	}
-	if extra.Search != "" {
-		if merged.Search != "" && merged.Search != extra.Search {
-			return query.Filters{}, fmt.Errorf("conflicting search filters")
-		}
-		merged.Search = extra.Search
-	}
-	if !extra.After.IsZero() {
-		if !merged.After.IsZero() && extra.After.After(merged.After) {
-			merged.After = extra.After
-		} else if merged.After.IsZero() {
-			merged.After = extra.After
-		}
-	}
-	if !extra.Before.IsZero() {
-		if !merged.Before.IsZero() && extra.Before.Before(merged.Before) {
-			merged.Before = extra.Before
-		} else if merged.Before.IsZero() {
-			merged.Before = extra.Before
-		}
-	}
-	return merged, nil
-}
-
-func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, retention *string) {
+func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, retention *string, metrics *bool, metricsFile *string, serve *bool, port *int) {
 	if !setFlags["file"] && cfg.File != nil {
 		*file = *cfg.File
 	}
@@ -455,17 +387,18 @@ func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, lev
 	if !setFlags["retention"] && cfg.Retention != nil {
 		*retention = *cfg.Retention
 	}
-}
-
-func applyRetention(entries []types.LogEntry, cutoff time.Time) []types.LogEntry {
-	filtered := make([]types.LogEntry, 0, len(entries))
-	for _, e := range entries {
-		if e.Timestamp.Before(cutoff) {
-			continue
-		}
-		filtered = append(filtered, e)
+	if !setFlags["metrics"] && cfg.Metrics != nil {
+		*metrics = *cfg.Metrics
 	}
-	return filtered
+	if !setFlags["metrics-file"] && cfg.MetricsFile != nil {
+		*metricsFile = *cfg.MetricsFile
+	}
+	if !setFlags["serve"] && cfg.Serve != nil {
+		*serve = *cfg.Serve
+	}
+	if !setFlags["port"] && cfg.Port != nil {
+		*port = *cfg.Port
+	}
 }
 
 func buildQueryPlan(filters query.Filters, queryStr string, useIndex bool) []string {
@@ -510,29 +443,7 @@ func printPlan(plan []string) {
 	fmt.Println()
 }
 
-type Metrics struct {
-	StartedAt    time.Time
-	FinishedAt   time.Time
-	Read         int
-	Ingested     int
-	FilteredOut  int
-	Returned     int
-	IndexEnabled bool
-}
-
-func (m Metrics) Duration() time.Duration {
-	return m.FinishedAt.Sub(m.StartedAt)
-}
-
-func (m Metrics) RatePerSec() (float64, bool) {
-	secs := m.Duration().Seconds()
-	if secs < 1 {
-		return 0, false
-	}
-	return float64(m.Ingested) / secs, true
-}
-
-func printMetrics(m Metrics, toStdout bool, path string) {
+func printMetrics(m engine.Metrics, toStdout bool, path string) {
 	rate, ok := m.RatePerSec()
 	rateText := "NA"
 	if ok {
@@ -542,10 +453,10 @@ func printMetrics(m Metrics, toStdout bool, path string) {
 		fmt.Sprintf("metrics.started_at=%s", m.StartedAt.UTC().Format(time.RFC3339)),
 		fmt.Sprintf("metrics.finished_at=%s", m.FinishedAt.UTC().Format(time.RFC3339)),
 		fmt.Sprintf("metrics.duration_ms=%d", m.Duration().Milliseconds()),
-		fmt.Sprintf("metrics.logs_read=%d", m.Read),
-		fmt.Sprintf("metrics.logs_ingested=%d", m.Ingested),
-		fmt.Sprintf("metrics.logs_filtered_out=%d", m.FilteredOut),
-		fmt.Sprintf("metrics.logs_returned=%d", m.Returned),
+		fmt.Sprintf("metrics.logs_read=%d", m.LogsRead),
+		fmt.Sprintf("metrics.logs_ingested=%d", m.LogsIngested),
+		fmt.Sprintf("metrics.logs_filtered_out=%d", m.LogsFilteredOut),
+		fmt.Sprintf("metrics.logs_returned=%d", m.LogsReturned),
 		fmt.Sprintf("metrics.rate_per_sec=%s", rateText),
 		fmt.Sprintf("metrics.index_enabled=%t", m.IndexEnabled),
 	}
@@ -573,6 +484,13 @@ func printRunHeader(source string, dest string) error {
 	fmt.Print(header)
 	fmt.Println()
 	return nil
+}
+
+func headerText(storePath string, storeHeader bool, source string) string {
+	if storePath == "" || !storeHeader {
+		return ""
+	}
+	return buildRunHeaderText(source, storePath)
 }
 
 func buildRunHeaderText(source string, dest string) string {

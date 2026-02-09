@@ -29,6 +29,10 @@ type Config struct {
 	Replay        *bool   `json:"replay"`
 	Snapshot      *string `json:"snapshot"`
 	Retention     *string `json:"retention"`
+	Metrics       *bool   `json:"metrics"`
+	MetricsFile   *string `json:"metricsFile"`
+	Serve         *bool   `json:"serve"`
+	Port          *int    `json:"port"`
 }
 
 // Load reads a JSON config file from disk.
