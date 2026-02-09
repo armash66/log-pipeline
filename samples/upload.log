@@ -1,0 +1,3 @@
+2026-02-09T17:00:00Z INFO Uploaded log sample started
+2026-02-09T17:00:05Z WARN Upload sample warns about latency
+2026-02-09T17:00:10Z ERROR Upload sample failed to reach service
