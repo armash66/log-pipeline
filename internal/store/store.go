@@ -4,12 +4,16 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	"github.com/armash/log-pipeline/internal/types"
 )
 
 // AppendJSONL appends entries as JSON lines to a file.
 func AppendJSONL(path string, entries []types.LogEntry) error {
+	if err := ensureDir(path); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
@@ -61,4 +65,12 @@ func LoadJSONL(path string) ([]types.LogEntry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+func ensureDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	return os.MkdirAll(dir, 0755)
 }
