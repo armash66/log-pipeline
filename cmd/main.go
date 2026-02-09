@@ -26,6 +26,7 @@ func main() {
 	tail := flag.Bool("tail", false, "stream new entries as the file grows")
 	tailFromStart := flag.Bool("tail-from-start", false, "when tailing, start from beginning instead of end")
 	tailPoll := flag.Duration("tail-poll", 500*time.Millisecond, "when tailing, poll interval (e.g. 250ms, 1s)")
+	format := flag.String("format", "plain", "log format: plain, json, logfmt, auto")
 	flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -44,12 +45,17 @@ func main() {
 		cutoff = time.Now().Add(-d)
 	}
 
+	parsedFormat, err := parseFormat(*format)
+	if err != nil {
+		log.Fatalf("invalid --format: %v", err)
+	}
+
 	if *tail {
-		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll)
+		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat)
 		return
 	}
 
-	entries, err := ingest.ReadLogFile(*file)
+	entries, err := ingest.ReadLogFileWithFormat(*file, parsedFormat)
 	if err != nil {
 		log.Fatalf("failed to read %s: %v", *file, err)
 	}
@@ -117,13 +123,14 @@ func matchesFilters(e types.LogEntry, level string, cutoff time.Time, search str
 	return true
 }
 
-func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration) {
+func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	entries, errs := ingest.TailLogFile(ctx, path, ingest.TailOptions{
 		FromStart:    fromStart,
 		PollInterval: poll,
+		Format:       format,
 	})
 
 	var out *os.File
@@ -176,5 +183,20 @@ func runTail(path string, level string, cutoff time.Time, search string, jsonOut
 				return
 			}
 		}
+	}
+}
+
+func parseFormat(value string) (ingest.Format, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "plain", "":
+		return ingest.FormatPlain, nil
+	case "json":
+		return ingest.FormatJSON, nil
+	case "logfmt":
+		return ingest.FormatLogfmt, nil
+	case "auto":
+		return ingest.FormatAuto, nil
+	default:
+		return "", fmt.Errorf("expected one of: plain, json, logfmt, auto")
 	}
 }

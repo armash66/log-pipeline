@@ -1,0 +1,4 @@
+{"timestamp":"2026-02-08T16:00:00Z","level":"INFO","message":"System startup initiated"}
+{"timestamp":"2026-02-08T16:00:10Z","level":"DEBUG","message":"Initializing database connection pool"}
+{"timestamp":"2026-02-08T16:00:20Z","level":"INFO","message":"Starting HTTP server on :8080"}
+{"timestamp":"2026-02-08T16:20:00Z","level":"ERROR","message":"Database query failed: timeout"}

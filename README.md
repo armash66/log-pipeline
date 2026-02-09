@@ -59,6 +59,10 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--json` (output as pretty JSON)
 	- `--limit` (limit number of entries in output)
 	- `--output` (save output to a file; writes text or JSON depending on `--json`)
+	- `--format` (plain, json, logfmt, auto)
+	- `--tail` (stream new entries as file grows)
+	- `--tail-from-start` (tail from beginning instead of end)
+	- `--tail-poll` (poll interval when tailing)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -86,6 +90,24 @@ Save text output:
 
 ```powershell
 go run ./cmd/main.go --file samples/app.log --level ERROR --output errors.txt
+```
+
+Parse JSON logs:
+
+```powershell
+go run ./cmd/main.go --file samples/json.log --format json
+```
+
+Parse logfmt logs:
+
+```powershell
+go run ./cmd/main.go --file samples/logfmt.log --format logfmt
+```
+
+Auto-detect format:
+
+```powershell
+go run ./cmd/main.go --file samples/json.log --format auto
 ```
 
 Run parser tests:
