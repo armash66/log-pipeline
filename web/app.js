@@ -18,6 +18,7 @@ const els = {
   uploadFormat: document.getElementById("upload-format"),
   uploadMode: document.getElementById("upload-replace"),
   uploadBtn: document.getElementById("upload-btn"),
+  uploadStatus: document.getElementById("upload-status"),
 };
 
 
@@ -43,6 +44,16 @@ function buildQueryParams() {
 
 function renderRows(logs) {
   els.rows.innerHTML = "";
+  if (!logs || logs.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 3;
+    td.textContent = "No logs yet. Run a query or upload a file.";
+    td.style.color = "#a9b0bf";
+    tr.appendChild(td);
+    els.rows.appendChild(tr);
+    return;
+  }
   logs.forEach((log) => {
     const tr = document.createElement("tr");
     const tdTime = document.createElement("td");
@@ -112,14 +123,18 @@ async function uploadFile() {
   form.append("format", els.uploadFormat.value || "auto");
   form.append("mode", els.uploadMode.value || "replace");
 
+  els.uploadStatus.textContent = "Uploading...";
   const res = await fetch("/ingest/file", {
     method: "POST",
     body: form,
   });
   if (!res.ok) {
     const text = await res.text();
+    els.uploadStatus.textContent = `Upload failed: ${text}`;
     throw new Error(text);
   }
+  const data = await res.json();
+  els.uploadStatus.textContent = `Uploaded: ${data.ingested || 0} logs`;
   if (els.uploadMode.value === "replace") {
     clearInputs();
   }
