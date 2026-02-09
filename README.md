@@ -192,6 +192,11 @@ Web UI:
 
 Open `http://localhost:8080/ui/` after starting `--serve`.
 
+UI tips:
+- `Start Live` toggles auto-refresh every 4 seconds.
+- Use `Clear` to reset filters and stop live polling.
+- Upload a log file with the `Upload & Ingest` section (supports `plain`, `json`, `logfmt`, or `auto`).
+
 Sharding (by day):
 
 ```powershell

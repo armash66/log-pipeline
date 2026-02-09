@@ -35,7 +35,12 @@ func ReadLogFileWithFormat(path string, format Format) ([]types.LogEntry, error)
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	return ReadLogReaderWithFormat(f, format)
+}
+
+// ReadLogReaderWithFormat reads log lines from a reader using a specific format or auto-detects.
+func ReadLogReaderWithFormat(r io.Reader, format Format) ([]types.LogEntry, error) {
+	scanner := bufio.NewScanner(r)
 	entries := make([]types.LogEntry, 0)
 	detected := format
 	seenFirstLine := false

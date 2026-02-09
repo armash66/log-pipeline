@@ -192,6 +192,12 @@ button:hover {
   font-weight: 600;
 }
 
+.ghost {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  color: var(--muted);
+}
+
 .panels {
   display: grid;
   grid-template-columns: 2fr 1fr;

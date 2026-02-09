@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/armash/log-pipeline/internal/engine"
+	"github.com/armash/log-pipeline/internal/ingest"
 	"github.com/armash/log-pipeline/internal/index"
 	"github.com/armash/log-pipeline/internal/query"
 	"github.com/armash/log-pipeline/internal/types"
@@ -47,6 +49,7 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	mux.HandleFunc("/query", s.handleQuery)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/ingest", s.handleIngest)
+	mux.HandleFunc("/ingest/file", s.handleIngestFile)
 	mux.HandleFunc("/", s.handleRoot)
 	mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServer(http.Dir(webDir()))))
 
@@ -92,7 +95,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	var cutoff time.Time
 	if since != "" {
-		d, err := time.ParseDuration(since)
+		d, err := parseFlexibleDuration(since)
 		if err != nil {
 			http.Error(w, "invalid since duration", http.StatusBadRequest)
 			return
@@ -247,6 +250,63 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleIngestFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.apiKey != "" {
+		if r.Header.Get("X-API-Key") != s.apiKey {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "invalid multipart form", http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "missing file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	formatParam := r.FormValue("format")
+	if formatParam == "" {
+		formatParam = r.URL.Query().Get("format")
+	}
+	format, err := parseFormat(formatParam)
+	if err != nil {
+		http.Error(w, "invalid format", http.StatusBadRequest)
+		return
+	}
+
+	entries, err := ingest.ReadLogReaderWithFormat(file, format)
+	if err != nil {
+		http.Error(w, "failed to parse file", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	combined, stats, err := engine.IngestEntries(s.entries, entries, s.storePath, s.shardDir, "")
+	if err != nil {
+		s.mu.Unlock()
+		http.Error(w, "failed to ingest", http.StatusInternalServerError)
+		return
+	}
+	s.entries = combined
+	s.loadStats.LogsRead += stats.LogsIngested
+	s.loadStats.LogsIngested += stats.LogsIngested
+	s.baseIndex = nil
+	s.mu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ingested": len(entries),
+	})
+}
+
 func metricsToMap(m engine.Metrics) map[string]interface{} {
 	rate, ok := m.RatePerSec()
 	rateText := "NA"
@@ -304,4 +364,62 @@ func (e ingestEntry) toEntry() (types.LogEntry, error) {
 		Level:     e.Level,
 		Message:   e.Message,
 	}, nil
+}
+
+func parseFormat(value string) (ingest.Format, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "plain":
+		return ingest.FormatPlain, nil
+	case "json":
+		return ingest.FormatJSON, nil
+	case "logfmt":
+		return ingest.FormatLogfmt, nil
+	case "auto":
+		return ingest.FormatAuto, nil
+	default:
+		return "", fmt.Errorf("invalid format")
+	}
+}
+
+func parseFlexibleDuration(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	var total time.Duration
+	s := value
+	for len(s) > 0 {
+		i := 0
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i == 0 {
+			return 0, fmt.Errorf("invalid duration")
+		}
+		if i >= len(s) {
+			return 0, fmt.Errorf("invalid duration")
+		}
+		num := s[:i]
+		unit := s[i]
+		n, err := strconv.Atoi(num)
+		if err != nil {
+			return 0, err
+		}
+		switch unit {
+		case 'd':
+			total += time.Duration(n) * 24 * time.Hour
+			s = s[i+1:]
+		case 'w':
+			total += time.Duration(n) * 7 * 24 * time.Hour
+			s = s[i+1:]
+		default:
+			d, err := time.ParseDuration(s)
+			if err != nil {
+				return 0, err
+			}
+			total += d
+			s = ""
+		}
+	}
+	return total, nil
 }

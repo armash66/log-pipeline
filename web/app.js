@@ -8,12 +8,16 @@ const els = {
   q: document.getElementById("q"),
   run: document.getElementById("run"),
   poll: document.getElementById("poll"),
+  clear: document.getElementById("clear"),
   rows: document.getElementById("rows"),
   count: document.getElementById("count"),
   metrics: document.getElementById("metrics"),
   rate: document.getElementById("rate"),
   health: document.getElementById("health"),
   lastQuery: document.getElementById("last-query"),
+  upload: document.getElementById("upload"),
+  uploadFormat: document.getElementById("upload-format"),
+  uploadBtn: document.getElementById("upload-btn"),
 };
 
 let pollTimer = null;
@@ -103,6 +107,42 @@ function togglePoll() {
   els.poll.textContent = "Stop Live";
 }
 
+function clearInputs() {
+  els.level.value = "";
+  els.search.value = "";
+  els.since.value = "";
+  els.after.value = "";
+  els.before.value = "";
+  els.limit.value = "50";
+  els.q.value = "";
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    els.poll.textContent = "Start Live";
+  }
+}
+
+async function uploadFile() {
+  if (!els.upload.files || els.upload.files.length === 0) {
+    alert("Select a file to upload.");
+    return;
+  }
+  const form = new FormData();
+  form.append("file", els.upload.files[0]);
+  form.append("format", els.uploadFormat.value || "auto");
+
+  const res = await fetch("/ingest/file", {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text);
+  }
+  await runQuery();
+  await refreshMetrics();
+}
+
 els.run.addEventListener("click", async () => {
   try {
     await runQuery();
@@ -113,6 +153,14 @@ els.run.addEventListener("click", async () => {
 });
 
 els.poll.addEventListener("click", togglePoll);
+els.clear.addEventListener("click", clearInputs);
+els.uploadBtn.addEventListener("click", async () => {
+  try {
+    await uploadFile();
+  } catch (err) {
+    alert(`Upload failed: ${err.message}`);
+  }
+});
 
 refreshHealth();
 runQuery();
