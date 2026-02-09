@@ -201,12 +201,6 @@ button:hover {
   font-weight: 600;
 }
 
-#poll {
-  background: linear-gradient(135deg, #f7c776, #ff9f43);
-  color: #0f1115;
-  font-weight: 600;
-}
-
 #clear {
   background: linear-gradient(135deg, #8fb3ff, #5f7cff);
   color: #0f1115;

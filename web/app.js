@@ -7,7 +7,6 @@ const els = {
   limit: document.getElementById("limit"),
   q: document.getElementById("q"),
   run: document.getElementById("run"),
-  poll: document.getElementById("poll"),
   clear: document.getElementById("clear"),
   rows: document.getElementById("rows"),
   count: document.getElementById("count"),
@@ -21,7 +20,6 @@ const els = {
   uploadBtn: document.getElementById("upload-btn"),
 };
 
-let pollTimer = null;
 
 async function fetchJSON(url, options) {
   const res = await fetch(url, options);
@@ -94,20 +92,6 @@ async function refreshMetrics() {
   renderMetrics(data);
 }
 
-function togglePoll() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-    els.poll.textContent = "Start Live";
-    return;
-  }
-  pollTimer = setInterval(async () => {
-    await runQuery();
-    await refreshMetrics();
-  }, 4000);
-  els.poll.textContent = "Stop Live";
-}
-
 function clearInputs() {
   els.level.value = "";
   els.search.value = "";
@@ -116,11 +100,6 @@ function clearInputs() {
   els.before.value = "";
   els.limit.value = "50";
   els.q.value = "";
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-    els.poll.textContent = "Start Live";
-  }
 }
 
 async function uploadFile() {
@@ -141,6 +120,9 @@ async function uploadFile() {
     const text = await res.text();
     throw new Error(text);
   }
+  if (els.uploadMode.value === "replace") {
+    clearInputs();
+  }
   await runQuery();
   await refreshMetrics();
 }
@@ -154,7 +136,6 @@ els.run.addEventListener("click", async () => {
   }
 });
 
-els.poll.addEventListener("click", togglePoll);
 els.clear.addEventListener("click", clearInputs);
 els.uploadBtn.addEventListener("click", async () => {
   try {
