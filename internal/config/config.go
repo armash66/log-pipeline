@@ -34,6 +34,8 @@ type Config struct {
 	MetricsFile   *string `json:"metricsFile"`
 	Serve         *bool   `json:"serve"`
 	Port          *int    `json:"port"`
+	ShardDir      *string `json:"shardDir"`
+	ShardRead     *bool   `json:"shardRead"`
 }
 
 // Load reads a JSON config file from disk.

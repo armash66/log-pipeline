@@ -18,6 +18,8 @@ type LoadOptions struct {
 	LoadPath        string
 	StorePath       string
 	SnapshotPath    string
+	ShardDir        string
+	ShardPaths      []string
 	Replay          bool
 	Retention       time.Duration
 	StoreHeaderText string
@@ -100,6 +102,14 @@ func LoadEntries(opts LoadOptions) (LoadResult, error) {
 		entries = append(entries, loaded...)
 		stats.LogsRead = len(loaded)
 		stats.LogsIngested = len(loaded)
+	} else if len(opts.ShardPaths) > 0 {
+		loaded, err := store.LoadJSONLFromMany(opts.ShardPaths)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		entries = append(entries, loaded...)
+		stats.LogsRead = len(loaded)
+		stats.LogsIngested = len(loaded)
 	} else {
 		if opts.Replay && opts.StorePath != "" {
 			loaded, err := store.LoadJSONL(opts.StorePath)
@@ -124,6 +134,12 @@ func LoadEntries(opts LoadOptions) (LoadResult, error) {
 				}
 			}
 			if err := store.AppendJSONL(opts.StorePath, newEntries); err != nil {
+				return LoadResult{}, err
+			}
+		}
+
+		if opts.ShardDir != "" {
+			if err := store.AppendShards(opts.ShardDir, newEntries); err != nil {
 				return LoadResult{}, err
 			}
 		}

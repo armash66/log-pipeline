@@ -18,6 +18,7 @@ import (
 	"github.com/armash/log-pipeline/internal/ingest"
 	"github.com/armash/log-pipeline/internal/query"
 	"github.com/armash/log-pipeline/internal/server"
+	"github.com/armash/log-pipeline/internal/shard"
 	"github.com/armash/log-pipeline/internal/snapshot"
 	"github.com/armash/log-pipeline/internal/store"
 )
@@ -50,6 +51,8 @@ func main() {
 	metricsFile := flag.String("metrics-file", "", "write metrics to a file (text)")
 	serve := flag.Bool("serve", false, "run HTTP server mode")
 	port := flag.Int("port", 8080, "server port for --serve")
+	shardDir := flag.String("shard-dir", "", "write daily JSONL shards to this directory")
+	shardRead := flag.Bool("shard-read", false, "read entries from shards in --shard-dir instead of --file")
 	flag.Parse()
 
 	runStart := time.Now()
@@ -63,10 +66,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
-		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshotPath, snapshotLoad, retention, metricsFlag, metricsFile, serve, port)
+		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshotPath, snapshotLoad, retention, metricsFlag, metricsFile, serve, port, shardDir, shardRead)
 	}
 
-	if *loadPath == "" && *snapshotLoad == "" {
+	if *shardRead && *shardDir == "" {
+		log.Fatalf("--shard-read requires --shard-dir")
+	}
+
+	if *loadPath == "" && *snapshotLoad == "" && !*shardRead {
 		if _, err := os.Stat(*file); err != nil {
 			if os.IsNotExist(err) {
 				log.Fatalf("file not found: %s\nHint: check the path or run with the sample file: --file samples\\sample.log", *file)
@@ -98,6 +105,32 @@ func main() {
 		log.Fatalf("invalid --format: %v", err)
 	}
 
+	filters := query.BuildFilters(*level, cutoff, *search)
+	if *queryStr != "" {
+		qf, err := query.Parse(*queryStr)
+		if err != nil {
+			log.Fatalf("invalid --query: %v", err)
+		}
+		merged, err := query.MergeFilters(filters, qf)
+		if err != nil {
+			log.Fatalf("invalid --query: %v", err)
+		}
+		filters = merged
+	}
+
+	var shardPaths []string
+	if *shardRead {
+		if !filters.After.IsZero() || !filters.Before.IsZero() {
+			shardPaths = shard.ShardPathsForRange(*shardDir, filters.After, filters.Before)
+		} else {
+			paths, err := shard.AllShardPaths(*shardDir)
+			if err != nil {
+				log.Fatalf("failed to list shards: %v", err)
+			}
+			shardPaths = paths
+		}
+	}
+
 	if *serve {
 		result, err := engine.LoadEntries(engine.LoadOptions{
 			File:         *file,
@@ -105,6 +138,8 @@ func main() {
 			LoadPath:     *loadPath,
 			SnapshotPath: *snapshotLoad,
 			StorePath:    "",
+			ShardDir:     *shardDir,
+			ShardPaths:   shardPaths,
 			Replay:       *replay,
 			Retention:    retentionDur,
 		})
@@ -141,6 +176,8 @@ func main() {
 		LoadPath:        *loadPath,
 		SnapshotPath:    *snapshotLoad,
 		StorePath:       *storePath,
+		ShardDir:        *shardDir,
+		ShardPaths:      shardPaths,
 		Replay:          *replay,
 		Retention:       retentionDur,
 		StoreHeaderText: headerText(*storePath, *storeHeader, *file),
@@ -156,19 +193,6 @@ func main() {
 		if err := snapshot.Create(*snapshotPath, entries, snapshotSources(*file, *loadPath, *snapshotLoad)); err != nil {
 			log.Fatalf("failed to write snapshot: %v", err)
 		}
-	}
-
-	filters := query.BuildFilters(*level, cutoff, *search)
-	if *queryStr != "" {
-		qf, err := query.Parse(*queryStr)
-		if err != nil {
-			log.Fatalf("invalid --query: %v", err)
-		}
-		merged, err := query.MergeFilters(filters, qf)
-		if err != nil {
-			log.Fatalf("invalid --query: %v", err)
-		}
-		filters = merged
 	}
 
 	if *explain {
@@ -329,7 +353,7 @@ func parseFormat(value string) (ingest.Format, error) {
 	}
 }
 
-func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, snapshotLoad *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int) {
+func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, snapshotLoad *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int, shardDir *string, shardRead *bool) {
 	if !setFlags["file"] && cfg.File != nil {
 		*file = *cfg.File
 	}
@@ -409,6 +433,12 @@ func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, lev
 	}
 	if !setFlags["port"] && cfg.Port != nil {
 		*port = *cfg.Port
+	}
+	if !setFlags["shard-dir"] && cfg.ShardDir != nil {
+		*shardDir = *cfg.ShardDir
+	}
+	if !setFlags["shard-read"] && cfg.ShardRead != nil {
+		*shardRead = *cfg.ShardRead
 	}
 }
 

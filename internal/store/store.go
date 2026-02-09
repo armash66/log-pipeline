@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/armash/log-pipeline/internal/types"
+	"github.com/armash/log-pipeline/internal/shard"
 )
 
 // AppendJSONL appends entries as JSON lines to a file.
@@ -67,6 +69,26 @@ func LoadJSONL(path string) ([]types.LogEntry, error) {
 	return entries, nil
 }
 
+// LoadJSONLFromMany reads entries from multiple JSONL files.
+func LoadJSONLFromMany(paths []string) ([]types.LogEntry, error) {
+	all := make([]types.LogEntry, 0)
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		entries, err := LoadJSONL(p)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, entries...)
+	}
+	shard.SortEntries(all)
+	return all, nil
+}
+
 // WriteSnapshot writes all entries to a JSON file (pretty-printed).
 func WriteSnapshot(path string, entries []types.LogEntry) error {
 	if err := ensureDir(path); err != nil {
@@ -96,6 +118,28 @@ func AppendHeader(path string, header string) error {
 func AppendHeaderToWriter(f *os.File, header string) error {
 	if _, err := f.WriteString(header); err != nil {
 		return err
+	}
+	return nil
+}
+
+// AppendShards appends entries into per-day shard files under baseDir.
+func AppendShards(baseDir string, entries []types.LogEntry) error {
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return err
+	}
+
+	grouped := shard.GroupByDay(entries)
+	days := make([]string, 0, len(grouped))
+	for day := range grouped {
+		days = append(days, day)
+	}
+	sort.Strings(days)
+
+	for _, day := range days {
+		path := filepath.Join(baseDir, day+".jsonl")
+		if err := AppendJSONL(path, grouped[day]); err != nil {
+			return err
+		}
 	}
 	return nil
 }
