@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -46,6 +47,8 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	mux.HandleFunc("/query", s.handleQuery)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/ingest", s.handleIngest)
+	mux.HandleFunc("/", s.handleRoot)
+	mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServer(http.Dir(webDir()))))
 
 	srv := &http.Server{
 		Addr:    addr,
@@ -66,6 +69,14 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	return err
 }
 
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/ui/", http.StatusFound)
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -74,6 +85,8 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	level := r.URL.Query().Get("level")
 	search := r.URL.Query().Get("search")
 	since := r.URL.Query().Get("since")
+	after := r.URL.Query().Get("after")
+	before := r.URL.Query().Get("before")
 	limitStr := r.URL.Query().Get("limit")
 	q := r.URL.Query().Get("q")
 
@@ -88,6 +101,22 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filters := query.BuildFilters(level, cutoff, search)
+	if after != "" {
+		tm, err := time.Parse(time.RFC3339, after)
+		if err != nil {
+			http.Error(w, "invalid after timestamp", http.StatusBadRequest)
+			return
+		}
+		filters.After = tm
+	}
+	if before != "" {
+		tm, err := time.Parse(time.RFC3339, before)
+		if err != nil {
+			http.Error(w, "invalid before timestamp", http.StatusBadRequest)
+			return
+		}
+		filters.Before = tm
+	}
 	if q != "" {
 		parsed, err := query.Parse(q)
 		if err != nil {
@@ -245,6 +274,10 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func webDir() string {
+	return filepath.Join("web")
 }
 
 type ingestPayload struct {

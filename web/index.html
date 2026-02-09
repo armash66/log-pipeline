@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Log Pipeline Console</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg">
+      <div class="orb orb-a"></div>
+      <div class="orb orb-b"></div>
+      <div class="grid"></div>
+    </div>
+
+    <main class="app">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Log Pipeline</p>
+          <h1>Query Console</h1>
+          <p class="sub">
+            Fast filters, live polling, and a clean view of your logs.
+          </p>
+        </div>
+        <div class="status">
+          <div class="status-card">
+            <span class="label">API</span>
+            <span id="health" class="value">unknown</span>
+          </div>
+          <div class="status-card">
+            <span class="label">Last Query</span>
+            <span id="last-query" class="value">never</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="controls">
+        <div class="control">
+          <label for="level">Level</label>
+          <select id="level">
+            <option value="">Any</option>
+            <option value="ERROR">ERROR</option>
+            <option value="WARN">WARN</option>
+            <option value="INFO">INFO</option>
+            <option value="DEBUG">DEBUG</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="search">Search</label>
+          <input id="search" type="text" placeholder="message contains..." />
+        </div>
+        <div class="control">
+          <label for="since">Since</label>
+          <input id="since" type="text" placeholder="10m, 2h30m, 1d" />
+        </div>
+        <div class="control">
+          <label for="after">After (UTC)</label>
+          <input id="after" type="text" placeholder="2026-02-08T16:00:00Z" />
+        </div>
+        <div class="control">
+          <label for="before">Before (UTC)</label>
+          <input id="before" type="text" placeholder="2026-02-08T17:00:00Z" />
+        </div>
+        <div class="control">
+          <label for="limit">Limit</label>
+          <input id="limit" type="number" min="0" value="50" />
+        </div>
+        <div class="control wide">
+          <label for="q">DSL Query</label>
+          <input id="q" type="text" placeholder='level=ERROR OR level=WARN message~"auth"' />
+        </div>
+        <div class="control buttons">
+          <button id="run">Run Query</button>
+          <button id="poll">Start Live</button>
+        </div>
+      </section>
+
+      <section class="panels">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Results</h2>
+            <span id="count" class="pill">0 logs</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Level</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Metrics</h2>
+            <span id="rate" class="pill">rate: NA</span>
+          </div>
+          <div class="metrics" id="metrics"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

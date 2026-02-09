@@ -188,6 +188,10 @@ curl http://localhost:8080/metrics
 curl -X POST http://localhost:8080/ingest -H "Content-Type: application/json" -d "{\"entry\":{\"timestamp\":\"2026-02-09T17:10:12Z\",\"level\":\"INFO\",\"message\":\"hello\"}}"
 ```
 
+Web UI:
+
+Open `http://localhost:8080/ui/` after starting `--serve`.
+
 Sharding (by day):
 
 ```powershell
