@@ -72,6 +72,8 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--explain` (print query plan before executing)
 	- `--replay` (load existing store entries into memory before ingesting new ones)
 	- `--snapshot` (write a full snapshot of entries to a JSON file)
+	- `--retention` (drop entries older than duration, e.g. `24h`, `7d`)
+	- `--config` (load settings from a JSON config file)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -130,6 +132,26 @@ Replay + snapshot:
 
 ```powershell
 go run ./cmd/main.go --file samples/app.log --store data/store.jsonl --replay --snapshot data/snapshot.json
+```
+
+Config file example (`config.json`):
+
+```json
+{
+  "file": "samples/app.log",
+  "format": "plain",
+  "store": "data/store.jsonl",
+  "replay": true,
+  "index": true,
+  "query": "level=ERROR message~timeout",
+  "retention": "72h"
+}
+```
+
+Run with config:
+
+```powershell
+go run ./cmd/main.go --config config.json
 ```
 
 Query DSL examples:

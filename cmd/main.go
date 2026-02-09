@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/armash/log-pipeline/internal/config"
 	"github.com/armash/log-pipeline/internal/index"
 	"github.com/armash/log-pipeline/internal/ingest"
 	"github.com/armash/log-pipeline/internal/query"
@@ -41,11 +42,26 @@ func main() {
 	explain := flag.Bool("explain", false, "print query plan before executing")
 	replay := flag.Bool("replay", false, "load existing store entries into memory before ingesting new ones")
 	snapshot := flag.String("snapshot", "", "write a full snapshot of entries to a JSON file")
+	retention := flag.String("retention", "", "drop entries older than duration (e.g. 24h, 7d)")
+	configPath := flag.String("config", "", "load settings from a JSON config file")
 	flag.Parse()
 
-    if _, err := os.Stat(*file); err != nil {
-        if os.IsNotExist(err) {
-            log.Fatalf("file not found: %s\nHint: check the path or run with the sample file: --file samples\\sample.log", *file)
+	setFlags := make(map[string]bool)
+	flag.CommandLine.Visit(func(f *flag.Flag) {
+		setFlags[f.Name] = true
+	})
+
+	if *configPath != "" {
+		cfg, err := config.Load(*configPath)
+		if err != nil {
+			log.Fatalf("failed to load config: %v", err)
+		}
+		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshot, retention)
+	}
+
+	if _, err := os.Stat(*file); err != nil {
+		if os.IsNotExist(err) {
+			log.Fatalf("file not found: %s\nHint: check the path or run with the sample file: --file samples\\sample.log", *file)
         }
         log.Fatalf("failed to access %s: %v", *file, err)
     }
@@ -57,6 +73,15 @@ func main() {
 			log.Fatalf("invalid --since value: %v", err)
 		}
 		cutoff = time.Now().Add(-d)
+	}
+
+	var retentionCutoff time.Time
+	if *retention != "" {
+		d, err := time.ParseDuration(*retention)
+		if err != nil {
+			log.Fatalf("invalid --retention value: %v", err)
+		}
+		retentionCutoff = time.Now().Add(-d)
 	}
 
 	parsedFormat, err := parseFormat(*format)
@@ -107,6 +132,10 @@ func main() {
 				log.Fatalf("failed to store entries: %v", err)
 			}
 		}
+	}
+
+	if !retentionCutoff.IsZero() {
+		entries = applyRetention(entries, retentionCutoff)
 	}
 
 	if *snapshot != "" {
@@ -342,6 +371,85 @@ func mergeFilters(base query.Filters, extra query.Filters) (query.Filters, error
 		}
 	}
 	return merged, nil
+}
+
+func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, retention *string) {
+	if !setFlags["file"] && cfg.File != nil {
+		*file = *cfg.File
+	}
+	if !setFlags["level"] && cfg.Level != nil {
+		*level = *cfg.Level
+	}
+	if !setFlags["since"] && cfg.Since != nil {
+		*since = *cfg.Since
+	}
+	if !setFlags["search"] && cfg.Search != nil {
+		*search = *cfg.Search
+	}
+	if !setFlags["json"] && cfg.JSON != nil {
+		*jsonOut = *cfg.JSON
+	}
+	if !setFlags["limit"] && cfg.Limit != nil {
+		*limit = *cfg.Limit
+	}
+	if !setFlags["output"] && cfg.Output != nil {
+		*output = *cfg.Output
+	}
+	if !setFlags["tail"] && cfg.Tail != nil {
+		*tail = *cfg.Tail
+	}
+	if !setFlags["tail-from-start"] && cfg.TailFromStart != nil {
+		*tailFromStart = *cfg.TailFromStart
+	}
+	if !setFlags["tail-poll"] && cfg.TailPoll != nil {
+		if d, err := time.ParseDuration(*cfg.TailPoll); err == nil {
+			*tailPoll = d
+		}
+	}
+	if !setFlags["format"] && cfg.Format != nil {
+		*format = *cfg.Format
+	}
+	if !setFlags["store"] && cfg.Store != nil {
+		*storePath = *cfg.Store
+	}
+	if !setFlags["load"] && cfg.Load != nil {
+		*loadPath = *cfg.Load
+	}
+	if !setFlags["index"] && cfg.Index != nil {
+		*useIndex = *cfg.Index
+	}
+	if !setFlags["quiet"] && cfg.Quiet != nil {
+		*quiet = *cfg.Quiet
+	}
+	if !setFlags["store-header"] && cfg.StoreHeader != nil {
+		*storeHeader = *cfg.StoreHeader
+	}
+	if !setFlags["query"] && cfg.Query != nil {
+		*queryStr = *cfg.Query
+	}
+	if !setFlags["explain"] && cfg.Explain != nil {
+		*explain = *cfg.Explain
+	}
+	if !setFlags["replay"] && cfg.Replay != nil {
+		*replay = *cfg.Replay
+	}
+	if !setFlags["snapshot"] && cfg.Snapshot != nil {
+		*snapshot = *cfg.Snapshot
+	}
+	if !setFlags["retention"] && cfg.Retention != nil {
+		*retention = *cfg.Retention
+	}
+}
+
+func applyRetention(entries []types.LogEntry, cutoff time.Time) []types.LogEntry {
+	filtered := make([]types.LogEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.Timestamp.Before(cutoff) {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	return filtered
 }
 
 func buildQueryPlan(filters query.Filters, queryStr string, useIndex bool) []string {
