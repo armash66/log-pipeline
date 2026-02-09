@@ -160,10 +160,14 @@ func main() {
 	}
 
 	if *serve {
+		loadPathForServe := *loadPath
+		if loadPathForServe == "" && *storePath != "" {
+			loadPathForServe = *storePath
+		}
 		result, err := engine.LoadEntries(engine.LoadOptions{
 			File:         *file,
 			Format:       parsedFormat,
-			LoadPath:     *loadPath,
+			LoadPath:     loadPathForServe,
 			SnapshotPath: *snapshotLoad,
 			StorePath:    "",
 			ShardDir:     *shardDir,

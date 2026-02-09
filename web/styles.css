@@ -140,6 +140,15 @@ h1 {
   padding: 12px;
 }
 
+.controls.upload .buttons {
+  justify-content: center;
+  align-items: center;
+}
+
+#upload-btn {
+  min-width: 180px;
+}
+
 .control {
   display: flex;
   flex-direction: column;
