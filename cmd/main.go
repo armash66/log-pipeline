@@ -92,7 +92,7 @@ func main() {
 
 	var cutoff time.Time
 	if *since != "" {
-		d, err := time.ParseDuration(*since)
+		d, err := parseFlexibleDuration(*since)
 		if err != nil {
 			log.Fatalf("invalid --since value: %v", err)
 		}
@@ -101,7 +101,7 @@ func main() {
 
 	var retentionDur time.Duration
 	if *retention != "" {
-		d, err := time.ParseDuration(*retention)
+		d, err := parseFlexibleDuration(*retention)
 		if err != nil {
 			log.Fatalf("invalid --retention value: %v", err)
 		}
@@ -664,6 +664,26 @@ func snapshotSources(file string, loadPath string, snapshotLoad string) []string
 		sources = append(sources, file)
 	}
 	return sources
+}
+
+func parseFlexibleDuration(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	last := value[len(value)-1]
+	if last == 'd' || last == 'w' {
+		num := strings.TrimSpace(value[:len(value)-1])
+		n, err := strconv.Atoi(num)
+		if err != nil {
+			return 0, err
+		}
+		if last == 'd' {
+			return time.Duration(n) * 24 * time.Hour, nil
+		}
+		return time.Duration(n) * 7 * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(value)
 }
 
 type cleanupPlan struct {
