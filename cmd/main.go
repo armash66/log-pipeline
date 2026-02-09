@@ -44,7 +44,7 @@ func main() {
 	snapshot := flag.String("snapshot", "", "write a full snapshot of entries to a JSON file")
 	retention := flag.String("retention", "", "drop entries older than duration (e.g. 24h, 7d)")
 	configPath := flag.String("config", "", "load settings from a JSON config file")
-	metrics := flag.Bool("metrics", false, "print ingestion/query metrics")
+	metricsFlag := flag.Bool("metrics", false, "print ingestion/query metrics")
 	metricsFile := flag.String("metrics-file", "", "write metrics to a file (text)")
 	serve := flag.Bool("serve", false, "run HTTP server mode")
 	port := flag.Int("port", 8080, "server port for --serve")
@@ -61,7 +61,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
-		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshot, retention, metrics, metricsFile, serve, port)
+		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshot, retention, metricsFlag, metricsFile, serve, port)
 	}
 
 	if *loadPath == "" {
@@ -91,6 +91,11 @@ func main() {
 		retentionDur = d
 	}
 
+	parsedFormat, err := parseFormat(*format)
+	if err != nil {
+		log.Fatalf("invalid --format: %v", err)
+	}
+
 	if *serve {
 		entries, stats, err := engine.LoadEntries(engine.LoadOptions{
 			File:      *file,
@@ -111,11 +116,6 @@ func main() {
 			log.Fatalf("server error: %v", err)
 		}
 		return
-	}
-
-	parsedFormat, err := parseFormat(*format)
-	if err != nil {
-		log.Fatalf("invalid --format: %v", err)
 	}
 
 	if *storePath != "" && *loadPath == "" {
@@ -168,14 +168,14 @@ func main() {
 		printPlan(buildQueryPlan(filters, *queryStr, *useIndex))
 	}
 
-	filtered, metrics := engine.QueryEntries(entries, loadStats, engine.QueryOptions{
+	filtered, metricsResult := engine.QueryEntries(entries, loadStats, engine.QueryOptions{
 		Filters:  filters,
 		UseIndex: *useIndex,
 		Limit:    *limit,
 	})
 
 	limited := filtered
-	afterFilters := len(entries) - metrics.LogsFilteredOut
+	afterFilters := len(entries) - metricsResult.LogsFilteredOut
 
 	var outputText string
 	if *jsonOut {
@@ -213,10 +213,10 @@ func main() {
 		fmt.Print(outputText)
 	}
 
-	if *metrics || *metricsFile != "" {
-		metrics.StartedAt = runStart
-		metrics.FinishedAt = time.Now()
-		printMetrics(metrics, *metrics, *metricsFile)
+	if *metricsFlag || *metricsFile != "" {
+		metricsResult.StartedAt = runStart
+		metricsResult.FinishedAt = time.Now()
+		printMetrics(metricsResult, *metricsFlag, *metricsFile)
 	}
 }
 
@@ -321,7 +321,7 @@ func parseFormat(value string) (ingest.Format, error) {
 	}
 }
 
-func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, retention *string, metrics *bool, metricsFile *string, serve *bool, port *int) {
+func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int) {
 	if !setFlags["file"] && cfg.File != nil {
 		*file = *cfg.File
 	}
@@ -388,7 +388,7 @@ func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, lev
 		*retention = *cfg.Retention
 	}
 	if !setFlags["metrics"] && cfg.Metrics != nil {
-		*metrics = *cfg.Metrics
+		*metricsFlag = *cfg.Metrics
 	}
 	if !setFlags["metrics-file"] && cfg.MetricsFile != nil {
 		*metricsFile = *cfg.MetricsFile
