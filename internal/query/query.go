@@ -60,8 +60,20 @@ func BuildFilters(level string, cutoff time.Time, search string) Filters {
 
 func MergeFilters(base Filters, extra Filters) (Filters, error) {
 	if len(extra.Or) > 0 {
-		return Filters{}, fmt.Errorf("OR cannot be merged with existing filters")
+		if isEmptyFilters(base) {
+			return extra, nil
+		}
+		root := Filters{Or: make([]Filters, 0, len(extra.Or))}
+		for _, opt := range extra.Or {
+			mergedOpt, err := MergeFilters(base, opt)
+			if err != nil {
+				return Filters{}, err
+			}
+			root.Or = append(root.Or, mergedOpt)
+		}
+		return root, nil
 	}
+
 	merged := base
 	if len(extra.LevelIn) > 0 {
 		if merged.Level != "" || len(merged.LevelIn) > 0 {
@@ -99,6 +111,10 @@ func MergeFilters(base Filters, extra Filters) (Filters, error) {
 		}
 	}
 	return merged, nil
+}
+
+func isEmptyFilters(f Filters) bool {
+	return f.Level == "" && f.Search == "" && f.After.IsZero() && f.Before.IsZero() && len(f.LevelIn) == 0 && len(f.Or) == 0
 }
 
 func MatchesFilters(e types.LogEntry, f Filters) bool {
