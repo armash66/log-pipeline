@@ -2,9 +2,12 @@ package ingest
 
 import (
 	"bufio"
+	"context"
+	"io"
 	"os"
 	"strings"
 	"time"
+
 	"github.com/armash/log-pipeline/internal/types"
 )
 
@@ -58,4 +61,71 @@ func parseLine(line string) (types.LogEntry, error) {
 		Level:     level,
 		Message:   message,
 	}, nil
+}
+
+type TailOptions struct {
+	FromStart    bool
+	PollInterval time.Duration
+}
+
+// TailLogFile streams new log entries as they are appended to a file.
+func TailLogFile(ctx context.Context, path string, opts TailOptions) (<-chan types.LogEntry, <-chan error) {
+	entries := make(chan types.LogEntry)
+	errs := make(chan error, 1)
+
+	go func() {
+		defer close(entries)
+		defer close(errs)
+
+		f, err := os.Open(path)
+		if err != nil {
+			errs <- err
+			return
+		}
+		defer f.Close()
+
+		if !opts.FromStart {
+			if _, err := f.Seek(0, io.SeekEnd); err != nil {
+				errs <- err
+				return
+			}
+		}
+
+		reader := bufio.NewReader(f)
+		poll := opts.PollInterval
+		if poll <= 0 {
+			poll = 500 * time.Millisecond
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(poll)
+					continue
+				}
+				errs <- err
+				return
+			}
+
+			line = strings.TrimRight(line, "\r\n")
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+
+			entry, err := parseLine(line)
+			if err != nil {
+				continue
+			}
+			entries <- entry
+		}
+	}()
+
+	return entries, errs
 }
