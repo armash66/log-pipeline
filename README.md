@@ -208,10 +208,3 @@ go run ./cmd/main.go --config config.json
 ```
 
 ---
-
-## Suggested Commit
-
-```bash
-git add README.md
-git commit -m "docs: update project README"
-```
