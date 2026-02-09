@@ -76,10 +76,11 @@
         </div>
       </section>
 
-      <section class="controls">
+      <section class="controls upload">
         <div class="control wide">
           <label for="upload">Upload Log File</label>
           <input id="upload" type="file" />
+          <p class="helper">Upload a log file in plain, JSON, or logfmt format.</p>
         </div>
         <div class="control">
           <label for="upload-format">Upload Format</label>
@@ -89,6 +90,15 @@
             <option value="json">json</option>
             <option value="logfmt">logfmt</option>
           </select>
+          <p class="helper">Use auto unless you know the format.</p>
+        </div>
+        <div class="control">
+          <label for="upload-replace">Ingest Mode</label>
+          <select id="upload-replace">
+            <option value="replace">Replace current data</option>
+            <option value="append">Append to current data</option>
+          </select>
+          <p class="helper">Replace shows only the uploaded file in results.</p>
         </div>
         <div class="control buttons">
           <button id="upload-btn">Upload & Ingest</button>

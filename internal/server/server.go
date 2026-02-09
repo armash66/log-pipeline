@@ -277,6 +277,10 @@ func (s *Server) handleIngestFile(w http.ResponseWriter, r *http.Request) {
 	if formatParam == "" {
 		formatParam = r.URL.Query().Get("format")
 	}
+	mode := r.FormValue("mode")
+	if mode == "" {
+		mode = r.URL.Query().Get("mode")
+	}
 	format, err := parseFormat(formatParam)
 	if err != nil {
 		http.Error(w, "invalid format", http.StatusBadRequest)
@@ -290,6 +294,18 @@ func (s *Server) handleIngestFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
+	if strings.EqualFold(mode, "replace") {
+		s.entries = entries
+		s.loadStats.LogsRead = len(entries)
+		s.loadStats.LogsIngested = len(entries)
+		s.baseIndex = nil
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ingested": len(entries),
+			"mode":     "replace",
+		})
+		return
+	}
 	combined, stats, err := engine.IngestEntries(s.entries, entries, s.storePath, s.shardDir, "")
 	if err != nil {
 		s.mu.Unlock()
@@ -304,6 +320,7 @@ func (s *Server) handleIngestFile(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ingested": len(entries),
+		"mode":     "append",
 	})
 }
 

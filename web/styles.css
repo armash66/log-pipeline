@@ -133,6 +133,13 @@ h1 {
   animation: rise 700ms ease both;
 }
 
+.controls.upload {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 12px;
+}
+
 .control {
   display: flex;
   flex-direction: column;
@@ -150,6 +157,13 @@ h1 {
 .control label {
   color: var(--muted);
   font-size: 12px;
+}
+
+.helper {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 input,
@@ -176,6 +190,7 @@ button:hover {
 
 .buttons {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
 }
@@ -192,10 +207,10 @@ button:hover {
   font-weight: 600;
 }
 
-.ghost {
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
-  color: var(--muted);
+#clear {
+  background: linear-gradient(135deg, #8fb3ff, #5f7cff);
+  color: #0f1115;
+  font-weight: 600;
 }
 
 .panels {
@@ -296,5 +311,9 @@ td.level.INFO {
   }
   .control.wide {
     grid-column: span 1;
+  }
+  .buttons {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

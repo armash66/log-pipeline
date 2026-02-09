@@ -17,6 +17,7 @@ const els = {
   lastQuery: document.getElementById("last-query"),
   upload: document.getElementById("upload"),
   uploadFormat: document.getElementById("upload-format"),
+  uploadMode: document.getElementById("upload-replace"),
   uploadBtn: document.getElementById("upload-btn"),
 };
 
@@ -130,6 +131,7 @@ async function uploadFile() {
   const form = new FormData();
   form.append("file", els.upload.files[0]);
   form.append("format", els.uploadFormat.value || "auto");
+  form.append("mode", els.uploadMode.value || "replace");
 
   const res = await fetch("/ingest/file", {
     method: "POST",
@@ -162,6 +164,13 @@ els.uploadBtn.addEventListener("click", async () => {
   }
 });
 
+function clearResults() {
+  renderRows([]);
+  els.count.textContent = "0 logs";
+  els.rate.textContent = "rate: NA";
+  els.metrics.innerHTML = "";
+  els.lastQuery.textContent = "never";
+}
+
 refreshHealth();
-runQuery();
-refreshMetrics();
+clearResults();
