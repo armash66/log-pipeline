@@ -51,7 +51,7 @@
         </div>
         <div class="control">
           <label for="since">Since</label>
-          <input id="since" type="text" placeholder="10m, 2h30m, 1d" />
+          <input id="since" type="text" placeholder="10m, 2h30m, 1d, 1w2d" />
         </div>
         <div class="control">
           <label for="after">After (UTC)</label>
@@ -99,10 +99,12 @@
           </select>
           <p class="helper">Replace shows only the uploaded file in results.</p>
         </div>
-        <div class="control buttons">
+        <div class="control">
           <label for="upload-btn">Upload Action</label>
-          <button id="upload-btn">Upload & Ingest</button>
-          <span id="upload-status" class="helper"></span>
+          <div class="upload-action">
+            <button id="upload-btn">Upload & Ingest</button>
+            <span id="upload-status" class="helper"></span>
+          </div>
         </div>
       </section>
 

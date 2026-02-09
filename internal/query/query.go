@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -180,15 +181,15 @@ func parseAndGroup(tokens []string) (Filters, error) {
 				return Filters{}, fmt.Errorf("message/search supports '~' or '='")
 			}
 			f.Search = val
-		case "since":
-			if op != "=" {
-				return Filters{}, fmt.Errorf("since supports only '='")
-			}
-			d, err := time.ParseDuration(val)
-			if err != nil {
-				return Filters{}, fmt.Errorf("invalid since duration")
-			}
-			f.After = time.Now().Add(-d)
+        case "since":
+            if op != "=" {
+                return Filters{}, fmt.Errorf("since supports only '='")
+            }
+            d, err := parseFlexibleDuration(val)
+            if err != nil {
+                return Filters{}, fmt.Errorf("invalid since duration")
+            }
+            f.After = time.Now().Add(-d)
 		case "after":
 			if op != "=" {
 				return Filters{}, fmt.Errorf("after supports only '='")
@@ -212,6 +213,46 @@ func parseAndGroup(tokens []string) (Filters, error) {
 		}
 	}
 	return f, nil
+}
+
+func parseFlexibleDuration(value string) (time.Duration, error) {
+    value = strings.TrimSpace(value)
+    if value == "" {
+        return 0, fmt.Errorf("empty duration")
+    }
+    var total time.Duration
+    s := value
+    for len(s) > 0 {
+        i := 0
+        for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+            i++
+        }
+        if i == 0 || i >= len(s) {
+            return 0, fmt.Errorf("invalid duration")
+        }
+        num := s[:i]
+        unit := s[i]
+        n, err := strconv.Atoi(num)
+        if err != nil {
+            return 0, err
+        }
+        switch unit {
+        case 'd':
+            total += time.Duration(n) * 24 * time.Hour
+            s = s[i+1:]
+        case 'w':
+            total += time.Duration(n) * 7 * 24 * time.Hour
+            s = s[i+1:]
+        default:
+            d, err := time.ParseDuration(s)
+            if err != nil {
+                return 0, err
+            }
+            total += d
+            s = ""
+        }
+    }
+    return total, nil
 }
 
 func splitToken(token string) (string, string, string, error) {
