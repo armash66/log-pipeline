@@ -160,12 +160,22 @@
             <h2>Website Help</h2>
           </div>
           <div class="help">
-            <p><strong>Start:</strong> Run the server and open <code>http://localhost:8080/ui/</code>.</p>
-            <p><strong>Run Query:</strong> Pick filters or use the DSL box, then click <em>Run Query</em>.</p>
-            <p><strong>Upload:</strong> Choose a log file, select format (auto/plain/json/logfmt), pick ingest mode, then click <em>Upload &amp; Ingest</em>.</p>
-            <p><strong>Replace vs Append:</strong> Replace shows only the uploaded file. Append adds to existing logs.</p>
-            <p><strong>Since examples:</strong> <code>10m</code>, <code>2h30m</code>, <code>1d</code>, <code>1w2d</code>.</p>
-            <p><strong>DSL examples:</strong> <code>level=ERROR OR level=WARN</code>, <code>level in (ERROR,WARN) message~"auth"</code>.</p>
+            <p><strong>What this is:</strong> A lightweight log search console. It queries your in-memory logs (loaded from file, store, or uploads) using filters or a simple DSL.</p>
+            <p><strong>Open the UI:</strong> Start the server, then visit <code>http://localhost:8080/ui/</code>.</p>
+            <p><strong>Run Query:</strong> Set filters (Level, Search, Since/After/Before, Limit) or use the DSL field, then click <em>Run Query</em>.</p>
+            <p><strong>Upload &amp; Ingest:</strong> Pick a log file, select format (auto/plain/json/logfmt), choose mode, then click <em>Upload &amp; Ingest</em>. Replace shows only the uploaded file; Append adds to existing logs.</p>
+            <p><strong>Supported formats:</strong></p>
+            <p>Plain: <code>2026-02-08T16:00:00Z INFO message</code></p>
+            <p>JSONL: <code>{"timestamp":"...","level":"INFO","message":"..."}</code></p>
+            <p>Logfmt: <code>timestamp=... level=INFO message="..."</code></p>
+            <p><strong>Time filters:</strong></p>
+            <p>Since: <code>10m</code>, <code>2h30m</code>, <code>1d</code>, <code>1w2d</code></p>
+            <p>After/Before: RFC3339 UTC like <code>2026-02-08T16:00:00Z</code></p>
+            <p><strong>DSL examples:</strong></p>
+            <p><code>level=ERROR OR level=WARN</code></p>
+            <p><code>level in (ERROR,WARN) message~"auth"</code></p>
+            <p><code>since=10m message~"timeout"</code></p>
+            <p><strong>Notes:</strong> If results look empty, clear filters or switch ingest mode to Replace when uploading a new file.</p>
           </div>
         </div>
       </section>
