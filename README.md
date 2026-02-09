@@ -82,6 +82,9 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--shard-dir` (write daily JSONL shards to this directory)
 	- `--shard-read` (read entries from shards in `--shard-dir` instead of `--file`)
 	- `--api-key` (require `X-API-Key` for HTTP ingest)
+	- `--cleanup` (apply retention cleanup to shard directory)
+	- `--cleanup-dry-run` (print cleanup plan only)
+	- `--cleanup-confirm` (confirm shard deletion)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -190,6 +193,13 @@ Sharding (by day):
 ```powershell
 go run ./cmd/main.go --file samples/app.log --shard-dir data/shards
 go run ./cmd/main.go --shard-dir data/shards --shard-read --query "after=2026-02-08T00:00:00Z before=2026-02-09T00:00:00Z"
+```
+
+Retention cleanup:
+
+```powershell
+go run ./cmd/main.go --shard-dir data/shards --retention 7d --cleanup --cleanup-dry-run
+go run ./cmd/main.go --shard-dir data/shards --retention 7d --cleanup --cleanup-confirm
 ```
 
 Query DSL examples:

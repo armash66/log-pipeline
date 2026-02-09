@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"sort"
 
 	"github.com/armash/log-pipeline/internal/config"
 	"github.com/armash/log-pipeline/internal/engine"
@@ -54,6 +55,9 @@ func main() {
 	shardDir := flag.String("shard-dir", "", "write daily JSONL shards to this directory")
 	shardRead := flag.Bool("shard-read", false, "read entries from shards in --shard-dir instead of --file")
 	apiKey := flag.String("api-key", "", "API key required for POST /ingest")
+	cleanup := flag.Bool("cleanup", false, "apply retention cleanup on shard directory")
+	cleanupDryRun := flag.Bool("cleanup-dry-run", false, "show what would be deleted without deleting")
+	cleanupConfirm := flag.Bool("cleanup-confirm", false, "confirm deletion for cleanup")
 	flag.Parse()
 
 	runStart := time.Now()
@@ -67,11 +71,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
-		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshotPath, snapshotLoad, retention, metricsFlag, metricsFile, serve, port, shardDir, shardRead, apiKey)
+		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshotPath, snapshotLoad, retention, metricsFlag, metricsFile, serve, port, shardDir, shardRead, apiKey, cleanup, cleanupDryRun, cleanupConfirm)
 	}
 
 	if *shardRead && *shardDir == "" {
 		log.Fatalf("--shard-read requires --shard-dir")
+	}
+	if *cleanup && *shardDir == "" {
+		log.Fatalf("--cleanup requires --shard-dir")
 	}
 
 	if *loadPath == "" && *snapshotLoad == "" && !*shardRead {
@@ -99,6 +106,26 @@ func main() {
 			log.Fatalf("invalid --retention value: %v", err)
 		}
 		retentionDur = d
+	}
+
+	if *cleanup {
+		if *retention == "" {
+			log.Fatalf("--cleanup requires --retention")
+		}
+		result, err := cleanupPlanner(*shardDir, time.Now().Add(-retentionDur))
+		if err != nil {
+			log.Fatalf("cleanup failed: %v", err)
+		}
+		printCleanupPlan(result)
+		if !*cleanupDryRun {
+			if !*cleanupConfirm {
+				log.Fatalf("cleanup requires --cleanup-confirm (or use --cleanup-dry-run)")
+			}
+			if err := executeCleanup(result); err != nil {
+				log.Fatalf("cleanup failed: %v", err)
+			}
+		}
+		return
 	}
 
 	parsedFormat, err := parseFormat(*format)
@@ -354,7 +381,7 @@ func parseFormat(value string) (ingest.Format, error) {
 	}
 }
 
-func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, snapshotLoad *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int, shardDir *string, shardRead *bool, apiKey *string) {
+func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, snapshotLoad *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int, shardDir *string, shardRead *bool, apiKey *string, cleanup *bool, cleanupDryRun *bool, cleanupConfirm *bool) {
 	if !setFlags["file"] && cfg.File != nil {
 		*file = *cfg.File
 	}
@@ -443,6 +470,15 @@ func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, lev
 	}
 	if !setFlags["api-key"] && cfg.ApiKey != nil {
 		*apiKey = *cfg.ApiKey
+	}
+	if !setFlags["cleanup"] && cfg.Cleanup != nil {
+		*cleanup = *cfg.Cleanup
+	}
+	if !setFlags["cleanup-dry-run"] && cfg.CleanupDryRun != nil {
+		*cleanupDryRun = *cfg.CleanupDryRun
+	}
+	if !setFlags["cleanup-confirm"] && cfg.CleanupConfirm != nil {
+		*cleanupConfirm = *cfg.CleanupConfirm
 	}
 }
 
@@ -628,4 +664,60 @@ func snapshotSources(file string, loadPath string, snapshotLoad string) []string
 		sources = append(sources, file)
 	}
 	return sources
+}
+
+type cleanupPlan struct {
+	Dir       string
+	Cutoff    time.Time
+	ToDelete  []string
+	Kept      []string
+}
+
+func cleanupPlanner(dir string, cutoff time.Time) (cleanupPlan, error) {
+	paths, err := shard.AllShardPaths(dir)
+	if err != nil {
+		return cleanupPlan{}, err
+	}
+	plan := cleanupPlan{
+		Dir:    dir,
+		Cutoff: cutoff,
+	}
+	for _, p := range paths {
+		day, ok := shard.ParseShardDate(p)
+		if !ok {
+			plan.Kept = append(plan.Kept, p)
+			continue
+		}
+		if day.Before(cutoff.UTC()) {
+			plan.ToDelete = append(plan.ToDelete, p)
+		} else {
+			plan.Kept = append(plan.Kept, p)
+		}
+	}
+	sort.Strings(plan.ToDelete)
+	sort.Strings(plan.Kept)
+	return plan, nil
+}
+
+func printCleanupPlan(plan cleanupPlan) {
+	fmt.Println("CLEANUP PLAN")
+	fmt.Printf("Directory : %s\n", plan.Dir)
+	fmt.Printf("Cutoff    : %s\n", plan.Cutoff.UTC().Format(time.RFC3339))
+	fmt.Printf("Delete    : %d shard(s)\n", len(plan.ToDelete))
+	for _, p := range plan.ToDelete {
+		fmt.Printf("- %s\n", p)
+	}
+	if len(plan.ToDelete) == 0 {
+		fmt.Println("- (none)")
+	}
+	fmt.Println()
+}
+
+func executeCleanup(plan cleanupPlan) error {
+	for _, p := range plan.ToDelete {
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+	}
+	return nil
 }

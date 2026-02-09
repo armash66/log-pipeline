@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/armash/log-pipeline/internal/types"
@@ -71,4 +72,17 @@ func ShardPathsForRange(baseDir string, after time.Time, before time.Time) []str
 func AllShardPaths(baseDir string) ([]string, error) {
 	pattern := filepath.Join(baseDir, "*.jsonl")
 	return filepath.Glob(pattern)
+}
+
+func ParseShardDate(path string) (time.Time, bool) {
+	base := filepath.Base(path)
+	if !strings.HasSuffix(base, ".jsonl") {
+		return time.Time{}, false
+	}
+	day := strings.TrimSuffix(base, ".jsonl")
+	t, err := time.Parse("2006-01-02", day)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
 }

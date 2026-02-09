@@ -37,6 +37,9 @@ type Config struct {
 	ShardDir      *string `json:"shardDir"`
 	ShardRead     *bool   `json:"shardRead"`
 	ApiKey        *string `json:"apiKey"`
+	Cleanup       *bool   `json:"cleanup"`
+	CleanupDryRun *bool   `json:"cleanupDryRun"`
+	CleanupConfirm *bool  `json:"cleanupConfirm"`
 }
 
 // Load reads a JSON config file from disk.
