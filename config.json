@@ -1,0 +1,9 @@
+{
+  "file": "samples/app.log",
+  "format": "plain",
+  "store": "data/store.jsonl",
+  "replay": true,
+  "index": true,
+  "query": "level=ERROR message~timeout",
+  "retention": "72h"
+}
