@@ -66,6 +66,7 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--store` (append ingested entries to a JSONL store file)
 	- `--load` (load entries from a JSONL store file instead of `--file`)
 	- `--index` (build in-memory indexes to speed up filtering)
+	- `--quiet` (suppress per-log console output; header still prints)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 

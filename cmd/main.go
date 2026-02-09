@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +34,7 @@ func main() {
 	storePath := flag.String("store", "", "append ingested entries to a JSONL store file")
 	loadPath := flag.String("load", "", "load entries from a JSONL store file instead of --file")
 	useIndex := flag.Bool("index", false, "build in-memory indexes to speed up filtering")
+	quiet := flag.Bool("quiet", false, "suppress per-log console output (header still prints)")
 	flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -55,8 +58,14 @@ func main() {
 		log.Fatalf("invalid --format: %v", err)
 	}
 
+	if *storePath != "" && *loadPath == "" {
+		if err := printRunHeader(*file, *storePath); err != nil {
+			log.Fatalf("failed to print run header: %v", err)
+		}
+	}
+
 	if *tail {
-		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat, *storePath)
+		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat, *storePath, *quiet)
 		return
 	}
 
@@ -129,7 +138,7 @@ func main() {
 			log.Fatalf("failed to write to %s: %v", *output, err)
 		}
 		fmt.Printf("Output saved to %s\n", *output)
-	} else {
+	} else if !*quiet {
 		fmt.Print(outputText)
 	}
 }
@@ -147,7 +156,7 @@ func matchesFilters(e types.LogEntry, level string, cutoff time.Time, search str
 	return true
 }
 
-func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format, storePath string) {
+func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format, storePath string, quiet bool) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -172,6 +181,9 @@ func runTail(path string, level string, cutoff time.Time, search string, jsonOut
 			if _, err := out.WriteString(text); err != nil {
 				log.Fatalf("failed to write to %s: %v", output, err)
 			}
+			return
+		}
+		if quiet {
 			return
 		}
 		fmt.Print(text)
@@ -238,4 +250,69 @@ func parseFormat(value string) (ingest.Format, error) {
 	default:
 		return "", fmt.Errorf("expected one of: plain, json, logfmt, auto")
 	}
+}
+
+func printRunHeader(source string, dest string) error {
+	existing, err := countExistingEntries(dest)
+	if err != nil {
+		return err
+	}
+
+	started := time.Now().UTC().Format(time.RFC3339)
+	border := "════════════════════════════════════"
+
+	fmt.Print("\n\n\n")
+	fmt.Println(border)
+	fmt.Println("Log ingestion run")
+	fmt.Printf("Started at : %s\n", started)
+	fmt.Printf("Source     : %s\n", source)
+	fmt.Printf("Destination: %s\n", dest)
+	fmt.Printf("Existing   : %s entries\n", formatCount(existing))
+	fmt.Println("Mode       : append (JSONL)")
+	fmt.Println(border)
+	fmt.Println()
+	return nil
+}
+
+func countExistingEntries(path string) (int, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	count := 0
+	for scanner.Scan() {
+		count++
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func formatCount(n int) string {
+	s := strconv.Itoa(n)
+	if n < 1000 {
+		return s
+	}
+	var b strings.Builder
+	pre := len(s) % 3
+	if pre == 0 {
+		pre = 3
+	}
+	b.WriteString(s[:pre])
+	for i := pre; i < len(s); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(s[i : i+3])
+	}
+	return b.String()
 }
