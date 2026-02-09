@@ -1,31 +1,24 @@
 # Log Pipeline
 
-A lightweight log aggregator + query engine in Go, now with CLI, HTTP API, and a Web UI.
-
-**Why this is cool**
-- Starts as a minimal log reader, grows into a real log service.
-- Clean, incremental phases from ingestion → querying → indexing → persistence → API → UI.
-- Built for learning and shipping, not just theory.
+A Go-based log ingestion and query system with a CLI, HTTP API, and Web UI.
 
 ---
 
-**What It Does**
+## What It Does
 
-Core capabilities:
-- Ingests logs into structured entries (`timestamp`, `level`, `message`)
-- Filters by level, time range, substring, and DSL
-- Streams with `--tail`
+- Ingests log files into structured entries (`timestamp`, `level`, `message`)
+- Filters by level, time range, substring, and DSL query
+- Streams new log lines (`--tail`)
 - Persists to JSONL (append-only)
-- Indexes for faster queries
-- Snapshots with metadata + replay
-- HTTP API for query + ingest
-- Web UI for browsing and querying
-- Time-based sharding by day
-- Cleanup for retention
+- In-memory indexing for faster queries
+- Snapshots with metadata + fast reload
+- HTTP API for querying and ingestion
+- Web UI for browsing and uploading logs
+- Time-based sharding and retention cleanup
 
 ---
 
-**Project Structure**
+## Project Structure
 
 ```
 log-pipeline/
@@ -50,7 +43,7 @@ log-pipeline/
 
 ---
 
-**Quick Start**
+## Quick Start
 
 ```powershell
 go run ./cmd/main.go
@@ -58,7 +51,9 @@ go run ./cmd/main.go
 
 ---
 
-**CLI Flags (full list)**
+## CLI Usage
+
+### Common flags
 
 - `--file` path to log file (default `samples/sample.log`)
 - `--format` `plain|json|logfmt|auto`
@@ -72,6 +67,9 @@ go run ./cmd/main.go
 - `--tail` stream new entries
 - `--tail-from-start` tail from beginning
 - `--tail-poll` polling interval
+
+### Persistence + indexing
+
 - `--store` append to JSONL file
 - `--load` load from JSONL file
 - `--store-header` write run header into store
@@ -81,23 +79,32 @@ go run ./cmd/main.go
 - `--snapshot` create snapshot file
 - `--snapshot-load` load from snapshot file
 - `--retention` drop entries older than duration
+
+### Metrics + service
+
 - `--metrics` print metrics
 - `--metrics-file` write metrics to file
 - `--serve` run HTTP API
 - `--port` server port (default 8080)
 - `--api-key` require `X-API-Key` for HTTP ingest
+
+### Sharding + cleanup
+
 - `--shard-dir` write daily shards to directory
 - `--shard-read` read from shards instead of file
 - `--cleanup` clean old shards (requires retention)
 - `--cleanup-dry-run` show cleanup plan only
 - `--cleanup-confirm` confirm deletion
+
+### Config
+
 - `--config` load settings from JSON config
 
 ---
 
-**Usage Examples**
+## CLI Examples
 
-Run:
+Basic run:
 ```powershell
 go run ./cmd/main.go --file samples/app.log
 ```
@@ -140,9 +147,9 @@ go run ./cmd/main.go --shard-dir data/shards --retention 7d --cleanup --cleanup-
 
 ---
 
-**HTTP API**
+## HTTP API
 
-Start:
+Start server:
 ```powershell
 go run ./cmd/main.go --file samples/app.log --serve --port 8080 --store data/store.jsonl
 ```
@@ -159,14 +166,14 @@ HTTP ingest:
 curl.exe -X POST "http://localhost:8080/ingest" -H "Content-Type: application/json" -d "{\"entry\":{\"timestamp\":\"2026-02-09T17:10:12Z\",\"level\":\"INFO\",\"message\":\"hello\"}}"
 ```
 
-Upload file (multipart):
+File upload:
 ```powershell
 curl.exe -X POST "http://localhost:8080/ingest/file" -H "Content-Type: application/json" --data-binary "@body.json"
 ```
 
 ---
 
-**Web UI**
+## Web UI
 
 Open:
 ```
@@ -181,7 +188,7 @@ Features:
 
 ---
 
-**Config File (example)**
+## Config File (example)
 
 ```json
 {
@@ -202,61 +209,9 @@ go run ./cmd/main.go --config config.json
 
 ---
 
-**Development Phases (From Zero → Full System)**
-
-Phase 0: Foundation
-- Go module, structure, LogEntry model, sample log, README
-
-Phase 1: Ingestion
-- Read file line-by-line, parse into entries
-
-Phase 2: Query Engine
-- Filters by level, time, substring + CLI flags
-
-Phase 3: Streaming
-- Tail mode with polling
-
-Phase 4: Indexing
-- In-memory indexes by level and time buckets
-
-Phase 5: Query Planning
-- `--explain` plan output
-
-Phase 6: Persistence
-- JSONL store + replay + snapshot
-
-Phase 7: Config + Extensibility
-- JSON config file, retention window
-
-Phase 8: Metrics + Observability
-- Run metrics output
-
-Phase 9: HTTP Service
-- `/health`, `/query`, `/metrics`, `/ingest`
-
-Phase 10: Snapshot & Replay
-- Metadata + atomic snapshot + fast load
-
-Phase 11: Sharding
-- Daily JSONL shards + range loading
-
-Phase 12: HTTP Ingestion
-- POST ingest single/batch + API key
-
-Phase 13: DSL v2
-- OR + `level in (...)`
-
-Phase 14: Cleanup
-- Retention cleanup with dry-run and confirm
-
-Phase 15: Web UI
-- Query dashboard + upload + help
-
----
-
-**Suggested Commit**
+## Suggested Commit
 
 ```bash
 git add README.md
-git commit -m "docs: add full project README"
+git commit -m "docs: update project README"
 ```
