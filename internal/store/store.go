@@ -67,6 +67,18 @@ func LoadJSONL(path string) ([]types.LogEntry, error) {
 	return entries, nil
 }
 
+// WriteSnapshot writes all entries to a JSON file (pretty-printed).
+func WriteSnapshot(path string, entries []types.LogEntry) error {
+	if err := ensureDir(path); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
 // AppendHeader writes a header block to the store file.
 func AppendHeader(path string, header string) error {
 	if err := ensureDir(path); err != nil {

@@ -70,6 +70,8 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--store-header` (also write the run header into the store file)
 	- `--query` (simple query DSL: `level=ERROR message~"auth" since=10m after=... before=...`)
 	- `--explain` (print query plan before executing)
+	- `--replay` (load existing store entries into memory before ingesting new ones)
+	- `--snapshot` (write a full snapshot of entries to a JSON file)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -122,6 +124,12 @@ Store entries to a JSONL file and query from it:
 ```powershell
 go run ./cmd/main.go --file samples/app.log --store data/store.jsonl
 go run ./cmd/main.go --load data/store.jsonl --level ERROR --index
+```
+
+Replay + snapshot:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --store data/store.jsonl --replay --snapshot data/snapshot.json
 ```
 
 Query DSL examples:

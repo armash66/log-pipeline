@@ -39,6 +39,8 @@ func main() {
 	storeHeader := flag.Bool("store-header", false, "also write the run header into the store file before entries")
 	queryStr := flag.String("query", "", "query DSL (e.g. level=ERROR message~\"auth\" since=10m)")
 	explain := flag.Bool("explain", false, "print query plan before executing")
+	replay := flag.Bool("replay", false, "load existing store entries into memory before ingesting new ones")
+	snapshot := flag.String("snapshot", "", "write a full snapshot of entries to a JSON file")
 	flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -83,19 +85,33 @@ func main() {
 			log.Fatalf("failed to load %s: %v", *loadPath, err)
 		}
 	} else {
-		entries, err = ingest.ReadLogFileWithFormat(*file, parsedFormat)
+		if *replay && *storePath != "" {
+			loaded, err := store.LoadJSONL(*storePath)
+			if err != nil {
+				log.Fatalf("failed to replay %s: %v", *storePath, err)
+			}
+			entries = append(entries, loaded...)
+		}
+		newEntries, err := ingest.ReadLogFileWithFormat(*file, parsedFormat)
 		if err != nil {
 			log.Fatalf("failed to read %s: %v", *file, err)
 		}
+		entries = append(entries, newEntries...)
 		if *storePath != "" {
 			if *storeHeader {
 				if err := store.AppendHeader(*storePath, buildRunHeaderText(*file, *storePath)); err != nil {
 					log.Fatalf("failed to store header: %v", err)
 				}
 			}
-			if err := store.AppendJSONL(*storePath, entries); err != nil {
+			if err := store.AppendJSONL(*storePath, newEntries); err != nil {
 				log.Fatalf("failed to store entries: %v", err)
 			}
+		}
+	}
+
+	if *snapshot != "" {
+		if err := store.WriteSnapshot(*snapshot, entries); err != nil {
+			log.Fatalf("failed to write snapshot: %v", err)
 		}
 	}
 
