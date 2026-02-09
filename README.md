@@ -69,6 +69,7 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--quiet` (suppress per-log console output; header still prints)
 	- `--store-header` (also write the run header into the store file)
 	- `--query` (simple query DSL: `level=ERROR message~"auth" since=10m after=... before=...`)
+	- `--explain` (print query plan before executing)
 - Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
 - Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
 
@@ -129,6 +130,12 @@ Query DSL examples:
 go run ./cmd/main.go --file samples/app.log --query "level=ERROR message~timeout"
 go run ./cmd/main.go --file samples/app.log --query "since=10m message~\"auth\""
 go run ./cmd/main.go --file samples/app.log --query "after=2026-02-08T16:00:00Z before=2026-02-08T17:00:00Z"
+```
+
+Explain plan:
+
+```powershell
+go run ./cmd/main.go --file samples/app.log --query "level=ERROR message~timeout" --index --explain
 ```
 
 Run parser tests:

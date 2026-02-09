@@ -38,6 +38,7 @@ func main() {
 	quiet := flag.Bool("quiet", false, "suppress per-log console output (header still prints)")
 	storeHeader := flag.Bool("store-header", false, "also write the run header into the store file before entries")
 	queryStr := flag.String("query", "", "query DSL (e.g. level=ERROR message~\"auth\" since=10m)")
+	explain := flag.Bool("explain", false, "print query plan before executing")
 	flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -68,6 +69,9 @@ func main() {
 	}
 
 	if *tail {
+		if *explain {
+			printPlan(buildQueryPlan(buildFilters(*level, cutoff, *search), *queryStr, *useIndex))
+		}
 		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat, *storePath, *quiet, *storeHeader)
 		return
 	}
@@ -106,6 +110,10 @@ func main() {
 			log.Fatalf("invalid --query: %v", err)
 		}
 		filters = merged
+	}
+
+	if *explain {
+		printPlan(buildQueryPlan(filters, *queryStr, *useIndex))
 	}
 
 	var filtered []types.LogEntry
@@ -318,6 +326,48 @@ func mergeFilters(base query.Filters, extra query.Filters) (query.Filters, error
 		}
 	}
 	return merged, nil
+}
+
+func buildQueryPlan(filters query.Filters, queryStr string, useIndex bool) []string {
+	plan := make([]string, 0, 4)
+	if useIndex {
+		if filters.Level != "" {
+			plan = append(plan, fmt.Sprintf("index(level=%s)", strings.ToUpper(filters.Level)))
+		} else if !filters.After.IsZero() {
+			plan = append(plan, fmt.Sprintf("index(time>=%s)", filters.After.UTC().Format(time.RFC3339)))
+		} else {
+			plan = append(plan, "scan(all)")
+		}
+	} else {
+		plan = append(plan, "scan(all)")
+	}
+
+	if filters.Level != "" && !useIndex {
+		plan = append(plan, fmt.Sprintf("filter(level=%s)", strings.ToUpper(filters.Level)))
+	}
+	if !filters.After.IsZero() {
+		plan = append(plan, fmt.Sprintf("filter(after=%s)", filters.After.UTC().Format(time.RFC3339)))
+	}
+	if !filters.Before.IsZero() {
+		plan = append(plan, fmt.Sprintf("filter(before=%s)", filters.Before.UTC().Format(time.RFC3339)))
+	}
+	if filters.Search != "" {
+		plan = append(plan, fmt.Sprintf("filter(message~%q)", filters.Search))
+	}
+
+	if queryStr != "" {
+		plan = append(plan, "dsl(parse)")
+	}
+
+	return plan
+}
+
+func printPlan(plan []string) {
+	fmt.Println("PLAN:")
+	for _, step := range plan {
+		fmt.Printf("- %s\n", step)
+	}
+	fmt.Println()
 }
 
 func printRunHeader(source string, dest string) error {
