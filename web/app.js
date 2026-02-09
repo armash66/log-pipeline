@@ -19,6 +19,10 @@ const els = {
   uploadMode: document.getElementById("upload-replace"),
   uploadBtn: document.getElementById("upload-btn"),
   uploadStatus: document.getElementById("upload-status"),
+  sidebar: document.getElementById("sidebar"),
+  sidebarOpen: document.getElementById("sidebar-open"),
+  sidebarClose: document.getElementById("sidebar-close"),
+  sidebarBackdrop: document.getElementById("sidebar-backdrop"),
 };
 
 
@@ -168,5 +172,46 @@ function clearResults() {
   els.lastQuery.textContent = "never";
 }
 
+function setPage(page) {
+  document.querySelectorAll(".page").forEach((section) => {
+    section.classList.add("hidden");
+  });
+  const active = document.getElementById(`page-${page}`);
+  if (active) {
+    active.classList.remove("hidden");
+  }
+  document.querySelectorAll(".nav-link").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.page === page);
+  });
+}
+
+function openSidebar() {
+  els.sidebar.classList.add("open");
+  els.sidebarBackdrop.classList.add("show");
+}
+
+function closeSidebar() {
+  els.sidebar.classList.remove("open");
+  els.sidebarBackdrop.classList.remove("show");
+}
+
+document.querySelectorAll(".nav-link").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    setPage(btn.dataset.page);
+    closeSidebar();
+  });
+});
+
+if (els.sidebarOpen) {
+  els.sidebarOpen.addEventListener("click", openSidebar);
+}
+if (els.sidebarClose) {
+  els.sidebarClose.addEventListener("click", closeSidebar);
+}
+if (els.sidebarBackdrop) {
+  els.sidebarBackdrop.addEventListener("click", closeSidebar);
+}
+
 refreshHealth();
 clearResults();
+setPage("home");

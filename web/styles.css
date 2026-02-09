@@ -84,6 +84,24 @@ body {
   animation: rise 600ms ease both;
 }
 
+.icon-btn {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.page.hidden {
+  display: none;
+}
+
+.help p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 3px;
@@ -189,6 +207,18 @@ button:hover {
   gap: 12px;
 }
 
+.upload-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+#upload-status {
+  min-height: 16px;
+}
+
 #run {
   background: linear-gradient(135deg, #5af0b3, #3bcf95);
   color: #0f1115;
@@ -276,6 +306,89 @@ td.level.INFO {
   gap: 8px;
   font-size: 13px;
   color: var(--muted);
+}
+
+.footer {
+  margin-top: 32px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.footer a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 260px;
+  height: 100vh;
+  background: #0d1117;
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+  transition: transform 200ms ease;
+  z-index: 20;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+.sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+  z-index: 10;
+}
+
+.sidebar-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-link {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.nav-link.active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-link {
+  color: var(--muted);
+  text-decoration: none;
 }
 
 @keyframes float {

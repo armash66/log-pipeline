@@ -13,8 +13,24 @@
       <div class="grid"></div>
     </div>
 
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <span class="brand">Log Pipeline</span>
+        <button id="sidebar-close" class="icon-btn" aria-label="Close menu">✕</button>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-link active" data-page="home">Home</button>
+        <button class="nav-link" data-page="help">Help</button>
+      </nav>
+      <div class="sidebar-foot">
+        <a class="sidebar-link" href="https://github.com/armash66" target="_blank" rel="noreferrer">github.com/armash66</a>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
     <main class="app">
       <header class="hero">
+        <button id="sidebar-open" class="icon-btn" aria-label="Open menu">☰</button>
         <div>
           <p class="eyebrow">Log Pipeline</p>
           <h1>Query Console</h1>
@@ -34,6 +50,7 @@
         </div>
       </header>
 
+      <section class="page" id="page-home">
       <section class="controls">
         <div class="control">
           <label for="level">Level</label>
@@ -135,6 +152,28 @@
           <div class="metrics" id="metrics"></div>
         </div>
       </section>
+      </section>
+
+      <section class="page hidden" id="page-help">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Website Help</h2>
+          </div>
+          <div class="help">
+            <p><strong>Start:</strong> Run the server and open <code>http://localhost:8080/ui/</code>.</p>
+            <p><strong>Run Query:</strong> Pick filters or use the DSL box, then click <em>Run Query</em>.</p>
+            <p><strong>Upload:</strong> Choose a log file, select format (auto/plain/json/logfmt), pick ingest mode, then click <em>Upload &amp; Ingest</em>.</p>
+            <p><strong>Replace vs Append:</strong> Replace shows only the uploaded file. Append adds to existing logs.</p>
+            <p><strong>Since examples:</strong> <code>10m</code>, <code>2h30m</code>, <code>1d</code>, <code>1w2d</code>.</p>
+            <p><strong>DSL examples:</strong> <code>level=ERROR OR level=WARN</code>, <code>level in (ERROR,WARN) message~"auth"</code>.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>Built by Armash</span>
+        <a href="https://github.com/armash66" target="_blank" rel="noreferrer">github.com/armash66</a>
+      </footer>
     </main>
 
     <script src="app.js"></script>
