@@ -68,7 +68,7 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--index` (build in-memory indexes to speed up filtering)
 	- `--quiet` (suppress per-log console output; header still prints)
 	- `--store-header` (also write the run header into the store file)
-	- `--query` (simple query DSL: `level=ERROR message~"auth" since=10m after=... before=...`)
+	- `--query` (DSL v2: AND/OR, `level in (...)`, `message~`, ranges)
 	- `--explain` (print query plan before executing)
 	- `--replay` (load existing store entries into memory before ingesting new ones)
 	- `--snapshot` (write a snapshot file with entries, indexes, and metadata)
@@ -198,6 +198,8 @@ Query DSL examples:
 go run ./cmd/main.go --file samples/app.log --query "level=ERROR message~timeout"
 go run ./cmd/main.go --file samples/app.log --query "since=10m message~\"auth\""
 go run ./cmd/main.go --file samples/app.log --query "after=2026-02-08T16:00:00Z before=2026-02-08T17:00:00Z"
+go run ./cmd/main.go --file samples/app.log --query "level=ERROR OR level=WARN"
+go run ./cmd/main.go --file samples/app.log --query "level in (ERROR,WARN) message~auth"
 ```
 
 Explain plan:

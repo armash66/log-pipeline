@@ -128,11 +128,43 @@ func Filter(all []types.LogEntry, idx *Index, level string, cutoff time.Time, se
 
 // FilterWithFilters returns entries matching query filters using indexes when available.
 func FilterWithFilters(all []types.LogEntry, idx *Index, f query.Filters) []types.LogEntry {
+	if len(f.Or) > 0 {
+		combined := make([]types.LogEntry, 0)
+		seen := make(map[string]struct{})
+		for _, opt := range f.Or {
+			part := FilterWithFilters(all, idx, opt)
+			for _, e := range part {
+				key := e.Timestamp.Format(time.RFC3339Nano) + "|" + e.Level + "|" + e.Message
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				combined = append(combined, e)
+			}
+		}
+		return combined
+	}
+
 	candidates := all
 	if idx != nil {
 		if f.Level != "" {
 			levelKey := strings.ToUpper(f.Level)
 			candidates = idx.ByLevel[levelKey]
+		} else if len(f.LevelIn) > 0 {
+			union := make([]types.LogEntry, 0)
+			seen := make(map[string]struct{})
+			for _, lvl := range f.LevelIn {
+				levelKey := strings.ToUpper(lvl)
+				for _, e := range idx.ByLevel[levelKey] {
+					key := e.Timestamp.Format(time.RFC3339Nano) + "|" + e.Level + "|" + e.Message
+					if _, ok := seen[key]; ok {
+						continue
+					}
+					seen[key] = struct{}{}
+					union = append(union, e)
+				}
+			}
+			candidates = union
 		} else if !f.After.IsZero() {
 			candidates = collectFromHourBuckets(idx, f.After)
 		}
@@ -142,6 +174,18 @@ func FilterWithFilters(all []types.LogEntry, idx *Index, f query.Filters) []type
 	for _, e := range candidates {
 		if f.Level != "" && !strings.EqualFold(e.Level, f.Level) {
 			continue
+		}
+		if len(f.LevelIn) > 0 {
+			ok := false
+			for _, lvl := range f.LevelIn {
+				if strings.EqualFold(e.Level, lvl) {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				continue
+			}
 		}
 		if !f.After.IsZero() && e.Timestamp.Before(f.After) {
 			continue

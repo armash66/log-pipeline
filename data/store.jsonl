@@ -81,3 +81,7 @@ Mode       : append (JSONL)
 {"Timestamp":"2026-02-08T16:40:05Z","Level":"INFO","Message":"Deleted 456 old sessions"}
 {"Timestamp":"2026-02-08T16:45:00Z","Level":"ERROR","Message":"Disk space low: 5% remaining"}
 {"Timestamp":"2026-02-08T16:45:05Z","Level":"WARN","Message":"Need immediate cleanup or service may fail"}
+{"Timestamp":"2026-02-09T17:10:12Z","Level":"INFO","Message":"hello"}
+{"Timestamp":"2026-02-09T17:10:12Z","Level":"INFO","Message":"hello"}
+{"Timestamp":"2026-02-09T17:10:12Z","Level":"INFO","Message":"hello"}
+{"Timestamp":"2026-02-09T17:10:12Z","Level":"INFO","Message":"hello"}

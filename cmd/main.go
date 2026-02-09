@@ -451,6 +451,8 @@ func buildQueryPlan(filters query.Filters, queryStr string, useIndex bool) []str
 	if useIndex {
 		if filters.Level != "" {
 			plan = append(plan, fmt.Sprintf("index(level=%s)", strings.ToUpper(filters.Level)))
+		} else if len(filters.LevelIn) > 0 {
+			plan = append(plan, fmt.Sprintf("index(level_in=%s)", strings.Join(filters.LevelIn, ",")))
 		} else if !filters.After.IsZero() {
 			plan = append(plan, fmt.Sprintf("index(time>=%s)", filters.After.UTC().Format(time.RFC3339)))
 		} else {
@@ -462,6 +464,9 @@ func buildQueryPlan(filters query.Filters, queryStr string, useIndex bool) []str
 
 	if filters.Level != "" && !useIndex {
 		plan = append(plan, fmt.Sprintf("filter(level=%s)", strings.ToUpper(filters.Level)))
+	}
+	if len(filters.LevelIn) > 0 {
+		plan = append(plan, fmt.Sprintf("filter(level_in=%s)", strings.Join(filters.LevelIn, ",")))
 	}
 	if !filters.After.IsZero() {
 		plan = append(plan, fmt.Sprintf("filter(after=%s)", filters.After.UTC().Format(time.RFC3339)))
