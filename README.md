@@ -71,7 +71,8 @@ This repository now contains a working CLI log pipeline with ingestion, filterin
 	- `--query` (simple query DSL: `level=ERROR message~"auth" since=10m after=... before=...`)
 	- `--explain` (print query plan before executing)
 	- `--replay` (load existing store entries into memory before ingesting new ones)
-	- `--snapshot` (write a full snapshot of entries to a JSON file)
+	- `--snapshot` (write a snapshot file with entries, indexes, and metadata)
+	- `--snapshot-load` (load entries from a snapshot instead of parsing logs)
 	- `--retention` (drop entries older than duration, e.g. `24h`, `7d`)
 	- `--config` (load settings from a JSON config file)
 	- `--metrics` (print ingestion/query metrics)
@@ -136,6 +137,7 @@ Replay + snapshot:
 
 ```powershell
 go run ./cmd/main.go --file samples/app.log --store data/store.jsonl --replay --snapshot data/snapshot.json
+go run ./cmd/main.go --snapshot-load data/snapshot.json --query "level=ERROR"
 ```
 
 Config file example (`config.json`):

@@ -18,6 +18,7 @@ import (
 	"github.com/armash/log-pipeline/internal/ingest"
 	"github.com/armash/log-pipeline/internal/query"
 	"github.com/armash/log-pipeline/internal/server"
+	"github.com/armash/log-pipeline/internal/snapshot"
 	"github.com/armash/log-pipeline/internal/store"
 )
 
@@ -41,7 +42,8 @@ func main() {
 	queryStr := flag.String("query", "", "query DSL (e.g. level=ERROR message~\"auth\" since=10m)")
 	explain := flag.Bool("explain", false, "print query plan before executing")
 	replay := flag.Bool("replay", false, "load existing store entries into memory before ingesting new ones")
-	snapshot := flag.String("snapshot", "", "write a full snapshot of entries to a JSON file")
+	snapshotPath := flag.String("snapshot", "", "write a full snapshot of entries to a JSON file")
+	snapshotLoad := flag.String("snapshot-load", "", "load entries from a snapshot file instead of parsing logs")
 	retention := flag.String("retention", "", "drop entries older than duration (e.g. 24h, 7d)")
 	configPath := flag.String("config", "", "load settings from a JSON config file")
 	metricsFlag := flag.Bool("metrics", false, "print ingestion/query metrics")
@@ -61,10 +63,10 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
-		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshot, retention, metricsFlag, metricsFile, serve, port)
+		applyConfig(cfg, setFlags, file, level, since, search, jsonOut, limit, output, tail, tailFromStart, tailPoll, format, storePath, loadPath, useIndex, quiet, storeHeader, queryStr, explain, replay, snapshotPath, snapshotLoad, retention, metricsFlag, metricsFile, serve, port)
 	}
 
-	if *loadPath == "" {
+	if *loadPath == "" && *snapshotLoad == "" {
 		if _, err := os.Stat(*file); err != nil {
 			if os.IsNotExist(err) {
 				log.Fatalf("file not found: %s\nHint: check the path or run with the sample file: --file samples\\sample.log", *file)
@@ -97,20 +99,21 @@ func main() {
 	}
 
 	if *serve {
-		entries, stats, err := engine.LoadEntries(engine.LoadOptions{
-			File:      *file,
-			Format:    parsedFormat,
-			LoadPath:  *loadPath,
-			StorePath: "",
-			Replay:    *replay,
-			Retention: retentionDur,
+		result, err := engine.LoadEntries(engine.LoadOptions{
+			File:         *file,
+			Format:       parsedFormat,
+			LoadPath:     *loadPath,
+			SnapshotPath: *snapshotLoad,
+			StorePath:    "",
+			Replay:       *replay,
+			Retention:    retentionDur,
 		})
 		if err != nil {
 			log.Fatalf("failed to load entries: %v", err)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		srv := server.New(entries, stats, *useIndex)
+		srv := server.New(result.Entries, result.Stats, *useIndex, result.Index)
 		addr := fmt.Sprintf(":%d", *port)
 		if err := srv.Start(ctx, addr); err != nil {
 			log.Fatalf("server error: %v", err)
@@ -132,10 +135,11 @@ func main() {
 		return
 	}
 
-	entries, loadStats, err := engine.LoadEntries(engine.LoadOptions{
+	result, err := engine.LoadEntries(engine.LoadOptions{
 		File:            *file,
 		Format:          parsedFormat,
 		LoadPath:        *loadPath,
+		SnapshotPath:    *snapshotLoad,
 		StorePath:       *storePath,
 		Replay:          *replay,
 		Retention:       retentionDur,
@@ -145,8 +149,11 @@ func main() {
 		log.Fatalf("failed to load entries: %v", err)
 	}
 
-	if *snapshot != "" {
-		if err := store.WriteSnapshot(*snapshot, entries); err != nil {
+	entries := result.Entries
+	loadStats := result.Stats
+
+	if *snapshotPath != "" {
+		if err := snapshot.Create(*snapshotPath, entries, snapshotSources(*file, *loadPath, *snapshotLoad)); err != nil {
 			log.Fatalf("failed to write snapshot: %v", err)
 		}
 	}
@@ -172,6 +179,7 @@ func main() {
 		Filters:  filters,
 		UseIndex: *useIndex,
 		Limit:    *limit,
+		Index:    result.Index,
 	})
 
 	limited := filtered
@@ -321,7 +329,7 @@ func parseFormat(value string) (ingest.Format, error) {
 	}
 }
 
-func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int) {
+func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, level *string, since *string, search *string, jsonOut *bool, limit *int, output *string, tail *bool, tailFromStart *bool, tailPoll *time.Duration, format *string, storePath *string, loadPath *string, useIndex *bool, quiet *bool, storeHeader *bool, queryStr *string, explain *bool, replay *bool, snapshot *string, snapshotLoad *string, retention *string, metricsFlag *bool, metricsFile *string, serve *bool, port *int) {
 	if !setFlags["file"] && cfg.File != nil {
 		*file = *cfg.File
 	}
@@ -383,6 +391,9 @@ func applyConfig(cfg *config.Config, setFlags map[string]bool, file *string, lev
 	}
 	if !setFlags["snapshot"] && cfg.Snapshot != nil {
 		*snapshot = *cfg.Snapshot
+	}
+	if !setFlags["snapshot-load"] && cfg.SnapshotLoad != nil {
+		*snapshotLoad = *cfg.SnapshotLoad
 	}
 	if !setFlags["retention"] && cfg.Retention != nil {
 		*retention = *cfg.Retention
@@ -564,4 +575,18 @@ func formatCount(n int) string {
 		b.WriteString(s[i : i+3])
 	}
 	return b.String()
+}
+
+func snapshotSources(file string, loadPath string, snapshotLoad string) []string {
+	sources := make([]string, 0, 2)
+	if snapshotLoad != "" {
+		sources = append(sources, snapshotLoad)
+	}
+	if loadPath != "" {
+		sources = append(sources, loadPath)
+	}
+	if file != "" {
+		sources = append(sources, file)
+	}
+	return sources
 }

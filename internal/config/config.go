@@ -28,6 +28,7 @@ type Config struct {
 	Explain       *bool   `json:"explain"`
 	Replay        *bool   `json:"replay"`
 	Snapshot      *string `json:"snapshot"`
+	SnapshotLoad  *string `json:"snapshotLoad"`
 	Retention     *string `json:"retention"`
 	Metrics       *bool   `json:"metrics"`
 	MetricsFile   *string `json:"metricsFile"`

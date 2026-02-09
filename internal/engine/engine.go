@@ -1,11 +1,13 @@
 package engine
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/armash/log-pipeline/internal/index"
 	"github.com/armash/log-pipeline/internal/ingest"
 	"github.com/armash/log-pipeline/internal/query"
+	"github.com/armash/log-pipeline/internal/snapshot"
 	"github.com/armash/log-pipeline/internal/store"
 	"github.com/armash/log-pipeline/internal/types"
 )
@@ -15,6 +17,7 @@ type LoadOptions struct {
 	Format          ingest.Format
 	LoadPath        string
 	StorePath       string
+	SnapshotPath    string
 	Replay          bool
 	Retention       time.Duration
 	StoreHeaderText string
@@ -29,6 +32,7 @@ type QueryOptions struct {
 	Filters  query.Filters
 	UseIndex bool
 	Limit    int
+	Index    *index.Index
 }
 
 type Metrics struct {
@@ -54,14 +58,44 @@ func (m Metrics) RatePerSec() (float64, bool) {
 }
 
 // LoadEntries loads entries from a file or JSONL store and optionally appends to a store.
-func LoadEntries(opts LoadOptions) ([]types.LogEntry, LoadStats, error) {
+type LoadResult struct {
+	Entries []types.LogEntry
+	Stats   LoadStats
+	Index   *index.Index
+}
+
+func LoadEntries(opts LoadOptions) (LoadResult, error) {
 	var entries []types.LogEntry
 	stats := LoadStats{}
+	var loadedIndex *index.Index
 
-	if opts.LoadPath != "" {
+	if opts.SnapshotPath != "" {
+		snap, err := snapshot.Load(opts.SnapshotPath)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		if snap.Metadata.Version != snapshot.Version {
+			return LoadResult{}, fmt.Errorf("snapshot version mismatch")
+		}
+		entries = append(entries, snap.Entries...)
+		stats.LogsRead = len(snap.Entries)
+		stats.LogsIngested = len(snap.Entries)
+		loadedIndex = index.FromSnapshotIndex(snap.Index, snap.Entries)
+
+		if opts.Replay && opts.StorePath != "" {
+			loaded, err := store.LoadJSONL(opts.StorePath)
+			if err != nil {
+				return LoadResult{}, err
+			}
+			entries = append(entries, loaded...)
+			stats.LogsRead += len(loaded)
+			stats.LogsIngested += len(loaded)
+			loadedIndex = nil
+		}
+	} else if opts.LoadPath != "" {
 		loaded, err := store.LoadJSONL(opts.LoadPath)
 		if err != nil {
-			return nil, stats, err
+			return LoadResult{}, err
 		}
 		entries = append(entries, loaded...)
 		stats.LogsRead = len(loaded)
@@ -70,14 +104,14 @@ func LoadEntries(opts LoadOptions) ([]types.LogEntry, LoadStats, error) {
 		if opts.Replay && opts.StorePath != "" {
 			loaded, err := store.LoadJSONL(opts.StorePath)
 			if err != nil {
-				return nil, stats, err
+				return LoadResult{}, err
 			}
 			entries = append(entries, loaded...)
 		}
 
 		newEntries, err := ingest.ReadLogFileWithFormat(opts.File, opts.Format)
 		if err != nil {
-			return nil, stats, err
+			return LoadResult{}, err
 		}
 		entries = append(entries, newEntries...)
 		stats.LogsRead = len(newEntries)
@@ -86,11 +120,11 @@ func LoadEntries(opts LoadOptions) ([]types.LogEntry, LoadStats, error) {
 		if opts.StorePath != "" {
 			if opts.StoreHeaderText != "" {
 				if err := store.AppendHeader(opts.StorePath, opts.StoreHeaderText); err != nil {
-					return nil, stats, err
+					return LoadResult{}, err
 				}
 			}
 			if err := store.AppendJSONL(opts.StorePath, newEntries); err != nil {
-				return nil, stats, err
+				return LoadResult{}, err
 			}
 		}
 	}
@@ -100,7 +134,11 @@ func LoadEntries(opts LoadOptions) ([]types.LogEntry, LoadStats, error) {
 		entries = applyRetention(entries, cutoff)
 	}
 
-	return entries, stats, nil
+	return LoadResult{
+		Entries: entries,
+		Stats:   stats,
+		Index:   loadedIndex,
+	}, nil
 }
 
 // QueryEntries filters entries and returns results with metrics.
@@ -108,7 +146,10 @@ func QueryEntries(entries []types.LogEntry, loadStats LoadStats, opts QueryOptio
 	start := time.Now()
 	var filtered []types.LogEntry
 	if opts.UseIndex {
-		idx := index.Build(entries)
+		idx := opts.Index
+		if idx == nil {
+			idx = index.Build(entries)
+		}
 		filtered = index.FilterWithFilters(entries, idx, opts.Filters)
 	} else {
 		filtered = make([]types.LogEntry, 0, len(entries))

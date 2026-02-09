@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/armash/log-pipeline/internal/engine"
+	"github.com/armash/log-pipeline/internal/index"
 	"github.com/armash/log-pipeline/internal/query"
 	"github.com/armash/log-pipeline/internal/types"
 )
@@ -18,15 +19,17 @@ type Server struct {
 	entries    []types.LogEntry
 	loadStats  engine.LoadStats
 	useIndex   bool
+	baseIndex  *index.Index
 	lastMetric engine.Metrics
 	hasMetric  bool
 }
 
-func New(entries []types.LogEntry, stats engine.LoadStats, useIndex bool) *Server {
+func New(entries []types.LogEntry, stats engine.LoadStats, useIndex bool, baseIndex *index.Index) *Server {
 	return &Server{
 		entries:   entries,
 		loadStats: stats,
 		useIndex:  useIndex,
+		baseIndex: baseIndex,
 	}
 }
 
@@ -105,12 +108,14 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	entries := s.entries
 	stats := s.loadStats
 	useIndex := s.useIndex
+	baseIndex := s.baseIndex
 	s.mu.RUnlock()
 
 	results, metrics := engine.QueryEntries(entries, stats, engine.QueryOptions{
 		Filters:  filters,
 		UseIndex: useIndex,
 		Limit:    limit,
+		Index:    baseIndex,
 	})
 
 	s.mu.Lock()

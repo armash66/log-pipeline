@@ -15,6 +15,13 @@ type Index struct {
 	Hours   []string
 }
 
+// SnapshotIndex stores index buckets as entry indices for snapshot persistence.
+type SnapshotIndex struct {
+	ByLevel map[string][]int `json:"byLevel"`
+	ByHour  map[string][]int `json:"byHour"`
+	Hours   []string         `json:"hours"`
+}
+
 // Build creates in-memory indexes by level and hour bucket.
 func Build(entries []types.LogEntry) *Index {
 	idx := &Index{
@@ -35,6 +42,58 @@ func Build(entries []types.LogEntry) *Index {
 		idx.Hours = append(idx.Hours, key)
 	}
 	sort.Strings(idx.Hours)
+
+	return idx
+}
+
+// ToSnapshotIndex converts an in-memory index into a snapshot-friendly index.
+func ToSnapshotIndex(idx *Index, entries []types.LogEntry) SnapshotIndex {
+	si := SnapshotIndex{
+		ByLevel: make(map[string][]int),
+		ByHour:  make(map[string][]int),
+	}
+
+	hourSet := make(map[string]struct{})
+	for i, e := range entries {
+		levelKey := strings.ToUpper(e.Level)
+		si.ByLevel[levelKey] = append(si.ByLevel[levelKey], i)
+
+		hourKey := hourBucket(e.Timestamp)
+		si.ByHour[hourKey] = append(si.ByHour[hourKey], i)
+		hourSet[hourKey] = struct{}{}
+	}
+
+	si.Hours = make([]string, 0, len(hourSet))
+	for key := range hourSet {
+		si.Hours = append(si.Hours, key)
+	}
+	sort.Strings(si.Hours)
+
+	return si
+}
+
+// FromSnapshotIndex rebuilds an in-memory index from a snapshot index.
+func FromSnapshotIndex(si SnapshotIndex, entries []types.LogEntry) *Index {
+	idx := &Index{
+		ByLevel: make(map[string][]types.LogEntry),
+		ByHour:  make(map[string][]types.LogEntry),
+		Hours:   append([]string(nil), si.Hours...),
+	}
+
+	for level, indices := range si.ByLevel {
+		for _, i := range indices {
+			if i >= 0 && i < len(entries) {
+				idx.ByLevel[level] = append(idx.ByLevel[level], entries[i])
+			}
+		}
+	}
+	for hour, indices := range si.ByHour {
+		for _, i := range indices {
+			if i >= 0 && i < len(entries) {
+				idx.ByHour[hour] = append(idx.ByHour[hour], entries[i])
+			}
+		}
+	}
 
 	return idx
 }
