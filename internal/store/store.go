@@ -67,6 +67,27 @@ func LoadJSONL(path string) ([]types.LogEntry, error) {
 	return entries, nil
 }
 
+// AppendHeader writes a header block to the store file.
+func AppendHeader(path string, header string) error {
+	if err := ensureDir(path); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return AppendHeaderToWriter(f, header)
+}
+
+// AppendHeaderToWriter writes a header block to a writer.
+func AppendHeaderToWriter(f *os.File, header string) error {
+	if _, err := f.WriteString(header); err != nil {
+		return err
+	}
+	return nil
+}
+
 func ensureDir(path string) error {
 	dir := filepath.Dir(path)
 	if dir == "." || dir == "" {

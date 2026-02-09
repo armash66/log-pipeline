@@ -35,6 +35,7 @@ func main() {
 	loadPath := flag.String("load", "", "load entries from a JSONL store file instead of --file")
 	useIndex := flag.Bool("index", false, "build in-memory indexes to speed up filtering")
 	quiet := flag.Bool("quiet", false, "suppress per-log console output (header still prints)")
+	storeHeader := flag.Bool("store-header", false, "also write the run header into the store file before entries")
 	flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -65,7 +66,7 @@ func main() {
 	}
 
 	if *tail {
-		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat, *storePath, *quiet)
+		runTail(*file, *level, cutoff, *search, *jsonOut, *limit, *output, *tailFromStart, *tailPoll, parsedFormat, *storePath, *quiet, *storeHeader)
 		return
 	}
 
@@ -81,6 +82,11 @@ func main() {
 			log.Fatalf("failed to read %s: %v", *file, err)
 		}
 		if *storePath != "" {
+			if *storeHeader {
+				if err := store.AppendHeader(*storePath, buildRunHeaderText(*file, *storePath)); err != nil {
+					log.Fatalf("failed to store header: %v", err)
+				}
+			}
 			if err := store.AppendJSONL(*storePath, entries); err != nil {
 				log.Fatalf("failed to store entries: %v", err)
 			}
@@ -156,7 +162,7 @@ func matchesFilters(e types.LogEntry, level string, cutoff time.Time, search str
 	return true
 }
 
-func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format, storePath string, quiet bool) {
+func runTail(path string, level string, cutoff time.Time, search string, jsonOut bool, limit int, output string, fromStart bool, poll time.Duration, format ingest.Format, storePath string, quiet bool, storeHeader bool) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -197,6 +203,11 @@ func runTail(path string, level string, cutoff time.Time, search string, jsonOut
 		}
 		defer f.Close()
 		storeFile = f
+		if storeHeader {
+			if err := store.AppendHeaderToWriter(storeFile, buildRunHeaderText(path, storePath)); err != nil {
+				log.Fatalf("failed to store header: %v", err)
+			}
+		}
 	}
 
 	matched := 0
@@ -259,19 +270,41 @@ func printRunHeader(source string, dest string) error {
 	}
 
 	started := time.Now().UTC().Format(time.RFC3339)
-	border := "════════════════════════════════════"
-
+	header := buildRunHeaderTextWithValues(started, source, dest, existing)
 	fmt.Print("\n\n\n")
-	fmt.Println(border)
-	fmt.Println("Log ingestion run")
-	fmt.Printf("Started at : %s\n", started)
-	fmt.Printf("Source     : %s\n", source)
-	fmt.Printf("Destination: %s\n", dest)
-	fmt.Printf("Existing   : %s entries\n", formatCount(existing))
-	fmt.Println("Mode       : append (JSONL)")
-	fmt.Println(border)
+	fmt.Print(header)
 	fmt.Println()
 	return nil
+}
+
+func buildRunHeaderText(source string, dest string) string {
+	existing, _ := countExistingEntries(dest)
+	started := time.Now().UTC().Format(time.RFC3339)
+	return buildRunHeaderTextWithValues(started, source, dest, existing)
+}
+
+func buildRunHeaderTextWithValues(started string, source string, dest string, existing int) string {
+	border := "════════════════════════════════════"
+	var b strings.Builder
+	b.WriteString(border)
+	b.WriteByte('\n')
+	b.WriteString("Log ingestion run\n")
+	b.WriteString("Started at : ")
+	b.WriteString(started)
+	b.WriteByte('\n')
+	b.WriteString("Source     : ")
+	b.WriteString(source)
+	b.WriteByte('\n')
+	b.WriteString("Destination: ")
+	b.WriteString(dest)
+	b.WriteByte('\n')
+	b.WriteString("Existing   : ")
+	b.WriteString(formatCount(existing))
+	b.WriteString(" entries\n")
+	b.WriteString("Mode       : append (JSONL)\n")
+	b.WriteString(border)
+	b.WriteByte('\n')
+	return b.String()
 }
 
 func countExistingEntries(path string) (int, error) {
