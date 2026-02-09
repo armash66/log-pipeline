@@ -1,152 +1,187 @@
 # Log Pipeline
 
-A lightweight log aggregator and query engine built in Go.
+A lightweight log aggregator + query engine in Go, now with CLI, HTTP API, and a Web UI.
 
-## What
-
-Log Pipeline reads log files, parses them into structured entries, and provides tools to query and analyze those entries.
-
-## Why
-
-- Learn Go fundamentals: file I/O, data structures, concurrency
-- Prototype real systems: basic ideas from ELK/Fluentd-style pipelines
-- Build incrementally: start simple and add features as needed
-
-## Status
-
-Active development — the repository contains an initial foundation (module, folder layout, `LogEntry` model, and a sample log). The project will grow iteratively; timeline details are intentionally omitted so development can flow naturally.
-
-### Project Structure
-
-```
-log-pipeline/
-├── cmd/               # Entry point
-│   └── main.go
-├── internal/          # Internal packages
-│   └── types/         # Data models
-│       └── types.go
-├── samples/           # Sample log files
-│   └── sample.log
-├── go.mod             # Module definition
-└── README.md          # This file
-```
-
-## Quick Start
-
-```bash
-go run ./cmd/main.go
-```
-
-## Next Steps
-
-- Implement ingestion: read lines, parse timestamp/level/message, store entries in-memory
-- Add a simple query CLI to filter by level and time range
+**Why this is cool**
+- Starts as a minimal log reader, grows into a real log service.
+- Clean, incremental phases from ingestion → querying → indexing → persistence → API → UI.
+- Built for learning and shipping, not just theory.
 
 ---
 
-Built as an iterative learning project.
- 
-## Current Implementation
+**What It Does**
 
-This repository now contains a working CLI log pipeline with ingestion, filtering, and basic output features. Key implemented items:
+Core capabilities:
+- Ingests logs into structured entries (`timestamp`, `level`, `message`)
+- Filters by level, time range, substring, and DSL
+- Streams with `--tail`
+- Persists to JSONL (append-only)
+- Indexes for faster queries
+- Snapshots with metadata + replay
+- HTTP API for query + ingest
+- Web UI for browsing and querying
+- Time-based sharding by day
+- Cleanup for retention
 
-- Ingestion: `internal/ingest.ReadLogFile` reads log files line-by-line and parses entries as `LogEntry` (timestamp, level, message).
-- CLI flags (in `cmd/main.go`):
-	- `--file` (path to log file, default `samples/sample.log`)
-	- `--level` (ERROR, WARN, INFO, DEBUG)
-	- `--since` (duration like `10m`, `1h` to filter recent entries)
-	- `--search` (case-insensitive substring search in message)
-	- `--json` (output as pretty JSON)
-	- `--limit` (limit number of entries in output)
-	- `--output` (save output to a file; writes text or JSON depending on `--json`)
-	- `--format` (plain, json, logfmt, auto)
-	- `--tail` (stream new entries as file grows)
-	- `--tail-from-start` (tail from beginning instead of end)
-	- `--tail-poll` (poll interval when tailing)
-	- `--store` (append ingested entries to a JSONL store file)
-	- `--load` (load entries from a JSONL store file instead of `--file`)
-	- `--index` (build in-memory indexes to speed up filtering)
-	- `--quiet` (suppress per-log console output; header still prints)
-	- `--store-header` (also write the run header into the store file)
-	- `--query` (DSL v2: AND/OR, `level in (...)`, `message~`, ranges)
-	- `--explain` (print query plan before executing)
-	- `--replay` (load existing store entries into memory before ingesting new ones)
-	- `--snapshot` (write a snapshot file with entries, indexes, and metadata)
-	- `--snapshot-load` (load entries from a snapshot instead of parsing logs)
-	- `--retention` (drop entries older than duration, e.g. `24h`, `7d`)
-	- `--config` (load settings from a JSON config file)
-	- `--metrics` (print ingestion/query metrics)
-	- `--metrics-file` (write metrics to a file)
-	- `--serve` (run HTTP server mode)
-	- `--port` (server port for `--serve`, default 8080)
-	- `--shard-dir` (write daily JSONL shards to this directory)
-	- `--shard-read` (read entries from shards in `--shard-dir` instead of `--file`)
-	- `--api-key` (require `X-API-Key` for HTTP ingest)
-	- `--cleanup` (apply retention cleanup to shard directory)
-	- `--cleanup-dry-run` (print cleanup plan only)
-	- `--cleanup-confirm` (confirm shard deletion)
-- Unit tests: `internal/ingest/ingest_test.go` covers `parseLine` and `ReadLogFile` behaviors.
-- Sample logs: `samples/sample.log` and `samples/app.log` are included for testing and demos.
+---
 
-## Usage Examples
+**Project Structure**
 
-Run the demo with defaults:
+```
+log-pipeline/
+├── cmd/                    # CLI entrypoint
+│   └── main.go
+├── internal/
+│   ├── config/             # JSON config loader
+│   ├── engine/             # shared load/query logic (CLI + HTTP)
+│   ├── index/              # in-memory indexing + snapshot index
+│   ├── ingest/             # parsers + tailing
+│   ├── query/              # DSL parsing + filter merge
+│   ├── server/             # HTTP API
+│   ├── shard/              # daily shard helpers
+│   ├── snapshot/           # snapshot writer/reader
+│   ├── store/              # JSONL persistence
+│   └── types/              # LogEntry model
+├── samples/                # example logs
+├── web/                    # UI (served at /ui)
+├── go.mod
+└── README.md
+```
+
+---
+
+**Quick Start**
 
 ```powershell
 go run ./cmd/main.go
 ```
 
-Filter and print errors:
+---
 
+**CLI Flags (full list)**
+
+- `--file` path to log file (default `samples/sample.log`)
+- `--format` `plain|json|logfmt|auto`
+- `--level` filter by level
+- `--since` duration (`10m`, `2h30m`, `1d`, `1w2d`)
+- `--search` substring in message
+- `--query` DSL (`level=ERROR OR level=WARN`, `level in (ERROR,WARN) message~"auth"`)
+- `--limit` max output entries
+- `--json` output as JSON
+- `--output` save output to a file
+- `--tail` stream new entries
+- `--tail-from-start` tail from beginning
+- `--tail-poll` polling interval
+- `--store` append to JSONL file
+- `--load` load from JSONL file
+- `--store-header` write run header into store
+- `--quiet` suppress per-log output
+- `--index` build index for faster filtering
+- `--replay` load existing store into memory before ingest
+- `--snapshot` create snapshot file
+- `--snapshot-load` load from snapshot file
+- `--retention` drop entries older than duration
+- `--metrics` print metrics
+- `--metrics-file` write metrics to file
+- `--serve` run HTTP API
+- `--port` server port (default 8080)
+- `--api-key` require `X-API-Key` for HTTP ingest
+- `--shard-dir` write daily shards to directory
+- `--shard-read` read from shards instead of file
+- `--cleanup` clean old shards (requires retention)
+- `--cleanup-dry-run` show cleanup plan only
+- `--cleanup-confirm` confirm deletion
+- `--config` load settings from JSON config
+
+---
+
+**Usage Examples**
+
+Run:
+```powershell
+go run ./cmd/main.go --file samples/app.log
+```
+
+Filter:
 ```powershell
 go run ./cmd/main.go --file samples/app.log --level ERROR
+go run ./cmd/main.go --file samples/app.log --since 10m --search "timeout"
 ```
 
-Search + JSON + limit + write to file:
-
+DSL:
 ```powershell
-go run ./cmd/main.go --file samples/app.log --search "database" --json --limit 2 --output results.json
+go run ./cmd/main.go --file samples/app.log --query "level=ERROR OR level=WARN"
+go run ./cmd/main.go --file samples/app.log --query "level in (ERROR,WARN) message~\"auth\""
 ```
 
-Save text output:
-
-```powershell
-go run ./cmd/main.go --file samples/app.log --level ERROR --output errors.txt
-```
-
-Parse JSON logs:
-
-```powershell
-go run ./cmd/main.go --file samples/json.log --format json
-```
-
-Parse logfmt logs:
-
-```powershell
-go run ./cmd/main.go --file samples/logfmt.log --format logfmt
-```
-
-Auto-detect format:
-
-```powershell
-go run ./cmd/main.go --file samples/json.log --format auto
-```
-
-Store entries to a JSONL file and query from it:
-
+Store + load:
 ```powershell
 go run ./cmd/main.go --file samples/app.log --store data/store.jsonl
 go run ./cmd/main.go --load data/store.jsonl --level ERROR --index
 ```
 
-Replay + snapshot:
-
+Snapshot:
 ```powershell
-go run ./cmd/main.go --file samples/app.log --store data/store.jsonl --replay --snapshot data/snapshot.json
+go run ./cmd/main.go --file samples/app.log --snapshot data/snapshot.json
 go run ./cmd/main.go --snapshot-load data/snapshot.json --query "level=ERROR"
 ```
 
-Config file example (`config.json`):
+Shards:
+```powershell
+go run ./cmd/main.go --file samples/app.log --shard-dir data/shards
+go run ./cmd/main.go --shard-dir data/shards --shard-read --query "after=2026-02-08T00:00:00Z before=2026-02-09T00:00:00Z"
+```
+
+Cleanup:
+```powershell
+go run ./cmd/main.go --shard-dir data/shards --retention 7d --cleanup --cleanup-dry-run
+go run ./cmd/main.go --shard-dir data/shards --retention 7d --cleanup --cleanup-confirm
+```
+
+---
+
+**HTTP API**
+
+Start:
+```powershell
+go run ./cmd/main.go --file samples/app.log --serve --port 8080 --store data/store.jsonl
+```
+
+Endpoints:
+```powershell
+curl http://localhost:8080/health
+curl "http://localhost:8080/query?level=ERROR&since=10m&search=auth&limit=5"
+curl http://localhost:8080/metrics
+```
+
+HTTP ingest:
+```powershell
+curl.exe -X POST "http://localhost:8080/ingest" -H "Content-Type: application/json" -d "{\"entry\":{\"timestamp\":\"2026-02-09T17:10:12Z\",\"level\":\"INFO\",\"message\":\"hello\"}}"
+```
+
+Upload file (multipart):
+```powershell
+curl.exe -X POST "http://localhost:8080/ingest/file" -H "Content-Type: application/json" --data-binary "@body.json"
+```
+
+---
+
+**Web UI**
+
+Open:
+```
+http://localhost:8080/ui/
+```
+
+Features:
+- Filters + DSL query
+- Upload and ingest logs
+- Metrics panel
+- Help page
+
+---
+
+**Config File (example)**
 
 ```json
 {
@@ -160,117 +195,68 @@ Config file example (`config.json`):
 }
 ```
 
-Run with config:
-
+Run:
 ```powershell
 go run ./cmd/main.go --config config.json
 ```
 
-Metrics:
+---
 
-```powershell
-go run ./cmd/main.go --file samples/app.log --metrics
-go run ./cmd/main.go --file samples/app.log --metrics --metrics-file data/metrics.txt
-```
+**Development Phases (From Zero → Full System)**
 
-Server mode:
+Phase 0: Foundation
+- Go module, structure, LogEntry model, sample log, README
 
-```powershell
-go run ./cmd/main.go --file samples/app.log --serve --port 8080
-```
+Phase 1: Ingestion
+- Read file line-by-line, parse into entries
 
-Endpoints:
+Phase 2: Query Engine
+- Filters by level, time, substring + CLI flags
 
-```powershell
-curl http://localhost:8080/health
-curl "http://localhost:8080/query?level=ERROR&since=10m&search=auth&limit=5"
-curl http://localhost:8080/metrics
-curl -X POST http://localhost:8080/ingest -H "Content-Type: application/json" -d "{\"entry\":{\"timestamp\":\"2026-02-09T17:10:12Z\",\"level\":\"INFO\",\"message\":\"hello\"}}"
-```
+Phase 3: Streaming
+- Tail mode with polling
 
-Web UI:
+Phase 4: Indexing
+- In-memory indexes by level and time buckets
 
-Open `http://localhost:8080/ui/` after starting `--serve`.
+Phase 5: Query Planning
+- `--explain` plan output
 
-UI tips:
-- `Start Live` toggles auto-refresh every 4 seconds.
-- Use `Clear` to reset filters and stop live polling.
-- Upload a log file with the `Upload & Ingest` section (supports `plain`, `json`, `logfmt`, or `auto`).
+Phase 6: Persistence
+- JSONL store + replay + snapshot
 
-Sharding (by day):
+Phase 7: Config + Extensibility
+- JSON config file, retention window
 
-```powershell
-go run ./cmd/main.go --file samples/app.log --shard-dir data/shards
-go run ./cmd/main.go --shard-dir data/shards --shard-read --query "after=2026-02-08T00:00:00Z before=2026-02-09T00:00:00Z"
-```
+Phase 8: Metrics + Observability
+- Run metrics output
 
-Retention cleanup:
+Phase 9: HTTP Service
+- `/health`, `/query`, `/metrics`, `/ingest`
 
-```powershell
-go run ./cmd/main.go --shard-dir data/shards --retention 7d --cleanup --cleanup-dry-run
-go run ./cmd/main.go --shard-dir data/shards --retention 7d --cleanup --cleanup-confirm
-```
+Phase 10: Snapshot & Replay
+- Metadata + atomic snapshot + fast load
 
-Query DSL examples:
+Phase 11: Sharding
+- Daily JSONL shards + range loading
 
-```powershell
-go run ./cmd/main.go --file samples/app.log --query "level=ERROR message~timeout"
-go run ./cmd/main.go --file samples/app.log --query "since=10m message~\"auth\""
-go run ./cmd/main.go --file samples/app.log --query "after=2026-02-08T16:00:00Z before=2026-02-08T17:00:00Z"
-go run ./cmd/main.go --file samples/app.log --query "level=ERROR OR level=WARN"
-go run ./cmd/main.go --file samples/app.log --query "level in (ERROR,WARN) message~auth"
-```
+Phase 12: HTTP Ingestion
+- POST ingest single/batch + API key
 
-Explain plan:
+Phase 13: DSL v2
+- OR + `level in (...)`
 
-```powershell
-go run ./cmd/main.go --file samples/app.log --query "level=ERROR message~timeout" --index --explain
-```
+Phase 14: Cleanup
+- Retention cleanup with dry-run and confirm
 
-Run parser tests:
+Phase 15: Web UI
+- Query dashboard + upload + help
 
-```powershell
-go test ./internal/ingest -v
-```
+---
 
-## Next Work (optional)
-
-- Streaming/tail mode (`--tail`) to follow files in real time
-- More filters (substring DSL), indexing for speed, persistence, HTTP API
-
-## Suggested Commit
+**Suggested Commit**
 
 ```bash
-git add .
-git commit -m "feat: add ingestion, CLI filters (--file,--level,--since,--search,--json,--limit,--output), tests and samples"
+git add README.md
+git commit -m "docs: add full project README"
 ```
-
-If you'd like, I can add streaming/tail next or prepare an integration test harness.
-
-**Development Process**
-
-- **Ingestion implementation:** `internal/ingest.ReadLogFile` reads `samples/*.log` line-by-line, expects an RFC3339 timestamp as the first token, a log level as the second token (e.g. `ERROR`, `WARN`, `INFO`, `DEBUG`), and the rest as the message. Malformed lines are skipped.
-- **Key files:**
-	- [cmd/main.go](cmd/main.go) — demo runner that loads a log and prints a summary
-	- [internal/ingest/ingest.go](internal/ingest/ingest.go) — ingestion + parser
-	- [internal/types/types.go](internal/types/types.go) — `LogEntry` model
-	- [samples/sample.log](samples/sample.log) — example input
-- **How to run locally:**
-
-```powershell
-go run ./cmd/main.go
-```
-
-- **When adding support for other formats:**
-	1. Add a new parser (e.g. JSON/syslog) under `internal/ingest`.
-	2. Make parsers pluggable or auto-detect by inspecting the first line.
-	3. Add unit tests for parsing edge cases.
-
-- **Suggested git commit** for the current changes:
-
-```bash
-git add .
-git commit -m "feat: add ingestion (ReadLogFile), sample log, and demo runner"
-```
-
-This README section captures the current implementation and quick next steps for extending the parser or building a CLI.
