@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/armash/log-pipeline/internal/query"
 	"github.com/armash/log-pipeline/internal/types"
 )
 
@@ -59,6 +60,37 @@ func Filter(all []types.LogEntry, idx *Index, level string, cutoff time.Time, se
 			continue
 		}
 		if search != "" && !strings.Contains(strings.ToLower(e.Message), strings.ToLower(search)) {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	return filtered
+}
+
+// FilterWithFilters returns entries matching query filters using indexes when available.
+func FilterWithFilters(all []types.LogEntry, idx *Index, f query.Filters) []types.LogEntry {
+	candidates := all
+	if idx != nil {
+		if f.Level != "" {
+			levelKey := strings.ToUpper(f.Level)
+			candidates = idx.ByLevel[levelKey]
+		} else if !f.After.IsZero() {
+			candidates = collectFromHourBuckets(idx, f.After)
+		}
+	}
+
+	filtered := make([]types.LogEntry, 0, len(candidates))
+	for _, e := range candidates {
+		if f.Level != "" && !strings.EqualFold(e.Level, f.Level) {
+			continue
+		}
+		if !f.After.IsZero() && e.Timestamp.Before(f.After) {
+			continue
+		}
+		if !f.Before.IsZero() && !e.Timestamp.Before(f.Before) {
+			continue
+		}
+		if f.Search != "" && !strings.Contains(strings.ToLower(e.Message), strings.ToLower(f.Search)) {
 			continue
 		}
 		filtered = append(filtered, e)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/armash/log-pipeline/internal/index"
 	"github.com/armash/log-pipeline/internal/ingest"
+	"github.com/armash/log-pipeline/internal/query"
 	"github.com/armash/log-pipeline/internal/store"
 	"github.com/armash/log-pipeline/internal/types"
 )
@@ -36,6 +37,7 @@ func main() {
 	useIndex := flag.Bool("index", false, "build in-memory indexes to speed up filtering")
 	quiet := flag.Bool("quiet", false, "suppress per-log console output (header still prints)")
 	storeHeader := flag.Bool("store-header", false, "also write the run header into the store file before entries")
+	queryStr := flag.String("query", "", "query DSL (e.g. level=ERROR message~\"auth\" since=10m)")
 	flag.Parse()
 
     if _, err := os.Stat(*file); err != nil {
@@ -93,14 +95,27 @@ func main() {
 		}
 	}
 
+	filters := buildFilters(*level, cutoff, *search)
+	if *queryStr != "" {
+		qf, err := query.Parse(*queryStr)
+		if err != nil {
+			log.Fatalf("invalid --query: %v", err)
+		}
+		merged, err := mergeFilters(filters, qf)
+		if err != nil {
+			log.Fatalf("invalid --query: %v", err)
+		}
+		filters = merged
+	}
+
 	var filtered []types.LogEntry
 	if *useIndex {
 		idx := index.Build(entries)
-		filtered = index.Filter(entries, idx, *level, cutoff, *search)
+		filtered = index.FilterWithFilters(entries, idx, filters)
 	} else {
 		filtered = make([]types.LogEntry, 0, len(entries))
 		for _, e := range entries {
-			if !matchesFilters(e, *level, cutoff, *search) {
+			if !matchesFilters(e, filters) {
 				continue
 			}
 			filtered = append(filtered, e)
@@ -149,14 +164,17 @@ func main() {
 	}
 }
 
-func matchesFilters(e types.LogEntry, level string, cutoff time.Time, search string) bool {
-	if level != "" && !strings.EqualFold(e.Level, level) {
+func matchesFilters(e types.LogEntry, f query.Filters) bool {
+	if f.Level != "" && !strings.EqualFold(e.Level, f.Level) {
 		return false
 	}
-	if !cutoff.IsZero() && e.Timestamp.Before(cutoff) {
+	if !f.After.IsZero() && e.Timestamp.Before(f.After) {
 		return false
 	}
-	if search != "" && !strings.Contains(strings.ToLower(e.Message), strings.ToLower(search)) {
+	if !f.Before.IsZero() && !e.Timestamp.Before(f.Before) {
+		return false
+	}
+	if f.Search != "" && !strings.Contains(strings.ToLower(e.Message), strings.ToLower(f.Search)) {
 		return false
 	}
 	return true
@@ -226,7 +244,7 @@ func runTail(path string, level string, cutoff time.Time, search string, jsonOut
 					log.Fatalf("failed to store entry: %v", err)
 				}
 			}
-			if !matchesFilters(e, level, cutoff, search) {
+			if !matchesFilters(e, buildFilters(level, cutoff, search)) {
 				continue
 			}
 
@@ -261,6 +279,45 @@ func parseFormat(value string) (ingest.Format, error) {
 	default:
 		return "", fmt.Errorf("expected one of: plain, json, logfmt, auto")
 	}
+}
+
+func buildFilters(level string, cutoff time.Time, search string) query.Filters {
+	return query.Filters{
+		Level:  level,
+		Search: search,
+		After:  cutoff,
+	}
+}
+
+func mergeFilters(base query.Filters, extra query.Filters) (query.Filters, error) {
+	merged := base
+	if extra.Level != "" {
+		if merged.Level != "" && !strings.EqualFold(merged.Level, extra.Level) {
+			return query.Filters{}, fmt.Errorf("conflicting level filters")
+		}
+		merged.Level = extra.Level
+	}
+	if extra.Search != "" {
+		if merged.Search != "" && merged.Search != extra.Search {
+			return query.Filters{}, fmt.Errorf("conflicting search filters")
+		}
+		merged.Search = extra.Search
+	}
+	if !extra.After.IsZero() {
+		if !merged.After.IsZero() && extra.After.After(merged.After) {
+			merged.After = extra.After
+		} else if merged.After.IsZero() {
+			merged.After = extra.After
+		}
+	}
+	if !extra.Before.IsZero() {
+		if !merged.Before.IsZero() && extra.Before.Before(merged.Before) {
+			merged.Before = extra.Before
+		} else if merged.Before.IsZero() {
+			merged.Before = extra.Before
+		}
+	}
+	return merged, nil
 }
 
 func printRunHeader(source string, dest string) error {
