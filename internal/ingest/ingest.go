@@ -53,7 +53,7 @@ func ReadLogReaderWithFormat(r io.Reader, format Format) ([]types.LogEntry, erro
 		if !seenFirstLine {
 			seenFirstLine = true
 			if format == FormatAuto {
-				detected = detectFormat(line)
+				detected = FormatAuto
 			}
 		}
 
@@ -125,9 +125,9 @@ func parseJSONLine(line string) (types.LogEntry, error) {
 		return types.LogEntry{}, err
 	}
 
-	tsRaw := firstStringFromMap(raw, "timestamp", "time", "ts")
-	level := firstStringFromMap(raw, "level", "severity")
-	message := firstStringFromMap(raw, "message", "msg")
+	tsRaw := firstStringFromMap(raw, "timestamp", "time", "ts", "Timestamp", "Time", "TS")
+	level := firstStringFromMap(raw, "level", "severity", "Level", "Severity")
+	message := firstStringFromMap(raw, "message", "msg", "Message", "Msg")
 
 	if tsRaw == "" || level == "" || message == "" {
 		return types.LogEntry{}, os.ErrInvalid
@@ -307,7 +307,7 @@ func TailLogFile(ctx context.Context, path string, opts TailOptions) (<-chan typ
 			if !seenFirstLine {
 				seenFirstLine = true
 				if opts.Format == FormatAuto || opts.Format == "" {
-					detected = detectFormat(line)
+					detected = FormatAuto
 				}
 			}
 
